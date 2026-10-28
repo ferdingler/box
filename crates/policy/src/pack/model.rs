@@ -1,51 +1,78 @@
 //! The checked tool pack that loading builds from the file.
 
+use std::borrow::Borrow;
 use std::collections::{BTreeMap, BTreeSet};
 
 use super::format::{OperandSpec, OptionSpec, PackFile, ShellActionSpec, ValueSpec, WhenSpec};
 use super::{PackRefusal, Place};
 use crate::schema::cedar_identifier;
 
+/// The name of one `[shell.<action>]` table of a checked pack.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+pub(crate) struct ActionName(String);
+
+/// The name of one `[effects]` entry of a checked pack.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+pub(crate) struct EffectName(String);
+
+impl ActionName {
+    pub(crate) fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl EffectName {
+    pub(crate) fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl Borrow<str> for EffectName {
+    fn borrow(&self) -> &str {
+        &self.0
+    }
+}
+
 /// One tool pack, read and checked.
 #[cfg_attr(test, derive(PartialEq))]
 #[derive(Debug)]
 pub(crate) struct Pack {
-    name: String,
-    version: u32,
-    program: String,
-    effects: BTreeSet<String>,
-    global_options: BTreeMap<String, ShellOption>,
-    actions: BTreeMap<String, ShellAction>,
+    pub(super) name: String,
+    pub(super) version: u32,
+    pub(super) program: String,
+    pub(super) effects: BTreeSet<EffectName>,
+    pub(super) global_options: BTreeMap<String, ShellOption>,
+    pub(super) actions: BTreeMap<ActionName, ShellAction>,
 }
 
 /// One `[shell.<action>]` table.
 #[cfg_attr(test, derive(PartialEq))]
 #[derive(Debug)]
 pub(crate) struct ShellAction {
-    usage: String,
-    aliases: Vec<String>,
-    adds: Vec<String>,
-    options: BTreeMap<String, ShellOption>,
-    operands: BTreeMap<String, Operand>,
+    pub(super) usage: String,
+    pub(super) aliases: Vec<Vec<String>>,
+    pub(super) adds: Vec<EffectName>,
+    pub(super) options: BTreeMap<String, ShellOption>,
+    pub(super) operands: BTreeMap<String, Operand>,
 }
 
 /// One option of a shell action or of `[global]`.
 #[cfg_attr(test, derive(PartialEq))]
 #[derive(Debug)]
 pub(crate) struct ShellOption {
-    flags: Vec<String>,
-    value: OptionValue,
-    repeated: bool,
-    anywhere: bool,
-    effects: EffectChanges,
+    pub(super) flags: Vec<String>,
+    pub(super) value: OptionValue,
+    pub(super) repeated: bool,
+    pub(super) anywhere: bool,
+    pub(super) effects: EffectChanges,
 }
 
 /// One operand of a shell action.
 #[cfg_attr(test, derive(PartialEq))]
 #[derive(Debug)]
 pub(crate) struct Operand {
-    rest: bool,
-    effects: EffectChanges,
+    pub(super) rest: bool,
+    pub(super) effects: EffectChanges,
 }
 
 /// Whether an option takes a value.
@@ -59,21 +86,21 @@ pub(crate) enum OptionValue {
 
 /// The patterns an option or operand value is like, and the declared effects it adds or removes.
 #[cfg_attr(test, derive(PartialEq))]
-#[derive(Debug)]
+#[derive(Debug, Clone, Default)]
 pub(crate) struct EffectChanges {
-    like: Vec<String>,
-    adds: Vec<String>,
-    removes: Vec<String>,
-    when: Vec<WhenChanges>,
+    pub(super) like: Vec<String>,
+    pub(super) adds: Vec<EffectName>,
+    pub(super) removes: Vec<EffectName>,
+    pub(super) when: Vec<WhenChanges>,
 }
 
 /// The effects one `when` entry adds or removes when a value is like its patterns.
 #[cfg_attr(test, derive(PartialEq))]
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub(crate) struct WhenChanges {
-    like: Vec<String>,
-    adds: Vec<String>,
-    removes: Vec<String>,
+    pub(super) like: Vec<String>,
+    pub(super) adds: Vec<EffectName>,
+    pub(super) removes: Vec<EffectName>,
 }
 
 impl Pack {
@@ -96,7 +123,7 @@ impl Pack {
         let mut effects = BTreeSet::new();
         for effect in file.effects.into_keys() {
             identifier(Place::Effect(effect.clone()), &effect)?;
-            effects.insert(effect);
+            effects.insert(EffectName(effect));
         }
         let mut global_options = BTreeMap::new();
         for (name, spec) in file.global.options {
@@ -107,7 +134,7 @@ impl Pack {
         let mut actions = BTreeMap::new();
         for (name, spec) in file.shell {
             let action = ShellAction::read(&name, spec, &file.program, &effects)?;
-            actions.insert(name, action);
+            actions.insert(ActionName(name), action);
         }
         Ok(Self {
             name: file.pack,
@@ -125,7 +152,7 @@ impl ShellAction {
         name: &str,
         spec: ShellActionSpec,
         program: &str,
-        effects: &BTreeSet<String>,
+        effects: &BTreeSet<EffectName>,
     ) -> Result<Self, PackRefusal> {
         let place = Place::Action(name.to_string());
         identifier(place.clone(), name)?;
@@ -137,6 +164,11 @@ impl ShellAction {
                 program: program.to_string(),
             });
         }
+        let aliases = spec
+            .aliases
+            .iter()
+            .map(|alias| alias.split_whitespace().map(str::to_string).collect())
+            .collect();
         let adds = declared(&Place::ActionAdds(name.to_string()), spec.adds, effects)?;
         let mut options = BTreeMap::new();
         for (option, option_spec) in spec.options {
@@ -158,7 +190,7 @@ impl ShellAction {
         }
         Ok(Self {
             usage: spec.usage,
-            aliases: spec.aliases,
+            aliases,
             adds,
             options,
             operands,
@@ -170,7 +202,7 @@ impl ShellOption {
     fn read(
         spec: OptionSpec,
         place: &Place,
-        effects: &BTreeSet<String>,
+        effects: &BTreeSet<EffectName>,
     ) -> Result<Self, PackRefusal> {
         Ok(Self {
             flags: spec.flag,
@@ -198,7 +230,7 @@ impl Operand {
     fn read(
         spec: OperandSpec,
         place: &Place,
-        effects: &BTreeSet<String>,
+        effects: &BTreeSet<EffectName>,
     ) -> Result<Self, PackRefusal> {
         Ok(Self {
             rest: spec.rest,
@@ -221,7 +253,7 @@ impl EffectChanges {
         adds: Vec<String>,
         removes: Vec<String>,
         when: Vec<WhenSpec>,
-        effects: &BTreeSet<String>,
+        effects: &BTreeSet<EffectName>,
     ) -> Result<Self, PackRefusal> {
         let adds = declared(place, adds, effects)?;
         let removes = declared(place, removes, effects)?;
@@ -244,8 +276,24 @@ impl EffectChanges {
     }
 }
 
+/// Whether `word` is a command word: lowercase ASCII letters, digits, and `-`, not first a `-`.
+pub(super) fn command_word(word: &str) -> bool {
+    let mut characters = word.chars();
+    characters
+        .next()
+        .is_some_and(|first| first.is_ascii_lowercase() || first.is_ascii_digit())
+        && characters.all(|character| {
+            character.is_ascii_lowercase() || character.is_ascii_digit() || character == '-'
+        })
+}
+
+/// Whether `name` is an identifier that a Cedar name carries unchanged.
+pub(super) fn is_identifier(name: &str) -> bool {
+    !name.is_empty() && cedar_identifier(name) == name
+}
+
 fn identifier(place: Place, name: &str) -> Result<(), PackRefusal> {
-    if !name.is_empty() && cedar_identifier(name) == name {
+    if is_identifier(name) {
         Ok(())
     } else {
         Err(PackRefusal::NotIdentifier {
@@ -255,18 +303,22 @@ fn identifier(place: Place, name: &str) -> Result<(), PackRefusal> {
     }
 }
 
+/// The declared effect that each of `names` refers to.
 fn declared(
     place: &Place,
     names: Vec<String>,
-    effects: &BTreeSet<String>,
-) -> Result<Vec<String>, PackRefusal> {
-    match names.iter().find(|name| !effects.contains(*name)) {
-        None => Ok(names),
-        Some(name) => Err(PackRefusal::UndeclaredEffect {
-            place: place.clone(),
-            effect: name.clone(),
-        }),
-    }
+    effects: &BTreeSet<EffectName>,
+) -> Result<Vec<EffectName>, PackRefusal> {
+    names
+        .into_iter()
+        .map(|name| match effects.get(name.as_str()) {
+            Some(effect) => Ok(effect.clone()),
+            None => Err(PackRefusal::UndeclaredEffect {
+                place: place.clone(),
+                effect: name,
+            }),
+        })
+        .collect()
 }
 
 #[cfg(test)]
@@ -277,11 +329,18 @@ mod tests {
         values.iter().map(|value| value.to_string()).collect()
     }
 
+    fn effects(values: &[&str]) -> Vec<EffectName> {
+        values
+            .iter()
+            .map(|value| EffectName(value.to_string()))
+            .collect()
+    }
+
     fn changes(like: &[&str], adds: &[&str], removes: &[&str]) -> EffectChanges {
         EffectChanges {
             like: strings(like),
-            adds: strings(adds),
-            removes: strings(removes),
+            adds: effects(adds),
+            removes: effects(removes),
             when: Vec::new(),
         }
     }
@@ -321,8 +380,8 @@ operands.refspec = { like = "+*", adds = ["force_push"], removes = ["network"], 
         let lease = EffectChanges {
             when: vec![WhenChanges {
                 like: strings(&["*"]),
-                adds: strings(&["force_push"]),
-                removes: strings(&["network"]),
+                adds: effects(&["force_push"]),
+                removes: effects(&["network"]),
             }],
             ..changes(&["*:*", "*"], &[], &[])
         };
@@ -338,7 +397,7 @@ operands.refspec = { like = "+*", adds = ["force_push"], removes = ["network"], 
             name: "git".to_string(),
             version: 2,
             program: "git".to_string(),
-            effects: BTreeSet::from(["force_push", "network", "override_config"].map(String::from)),
+            effects: BTreeSet::from_iter(effects(&["force_push", "network", "override_config"])),
             global_options: BTreeMap::from([
                 (
                     "config".to_string(),
@@ -362,12 +421,12 @@ operands.refspec = { like = "+*", adds = ["force_push"], removes = ["network"], 
                 ),
             ]),
             actions: BTreeMap::from([(
-                "push".to_string(),
+                ActionName("push".to_string()),
                 ShellAction {
                     usage: "git [global options] push [options] [<remote> [<refspec>...]]"
                         .to_string(),
-                    aliases: strings(&["send"]),
-                    adds: strings(&["network"]),
+                    aliases: vec![strings(&["send"])],
+                    adds: effects(&["network"]),
                     options: BTreeMap::from([
                         (
                             "dry_run".to_string(),

@@ -4,9 +4,18 @@
 //! |---|---|
 //! | `format` | the `*.pack.toml` document as written |
 //! | `model` | the checked pack that loading builds from that document |
+//! | `usage` | one `usage` line, read into the shape of its command lines |
+//! | `grammar` | the shell grammar that compiling a pack builds |
+//! | `parse` | one command line, read against the shell grammar |
 
 mod format;
+mod grammar;
 mod model;
+mod parse;
+mod usage;
+
+#[cfg(test)]
+mod corpus;
 
 use std::fmt;
 use std::path::{Path, PathBuf};
