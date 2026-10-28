@@ -85,7 +85,8 @@ The `native-filesystem-policy` Cargo feature includes the adapter but does not a
 `[experimental-features] native-filesystem-policy = true` enables the mechanism and supplies the default for each workload.
 An optional `native-filesystem-policy` boolean in `[agent]`, `[tool.<name>]`, or a local `[mcp.<name>]` overrides that default.
 Each table inherits the global default independently. Remote MCP entries refuse the setting.
-An explicit process enablement requires the global gate. Standard release builds exclude the adapter.
+An explicit process enablement requires the global gate.
+Signed macOS releases include the adapter, but retain this explicit runtime selection.
 
 The trusted launcher holds each workload before execution and registers its selection against the kernel-observed process identity.
 Children inherit the selection across forks and executable changes. Only trusted launches apply table overrides.
