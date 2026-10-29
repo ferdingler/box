@@ -24,6 +24,8 @@ pub enum Signal {
     AgentMetrics,
     /// One change to the authority this box holds, rather than one decision under it.
     ControlPlane,
+    /// Opt-in execution events from the box.
+    ExecutionTrace,
 }
 
 impl Signal {
@@ -37,6 +39,7 @@ impl Signal {
             Self::AgentLogs => "agent_logs",
             Self::AgentMetrics => "agent_metrics",
             Self::ControlPlane => "control_plane",
+            Self::ExecutionTrace => "execution_trace",
         }
     }
 
@@ -52,10 +55,14 @@ impl Signal {
         vec![Self::PolicyDenied, Self::PolicyPermitted]
     }
 
-    /// Every signal, which is what a target receives when it names none.
+    /// The signals a target receives when it names none.
     #[must_use]
     pub fn default_signals() -> Vec<Self> {
-        Self::EVERY.to_vec()
+        Self::EVERY
+            .iter()
+            .copied()
+            .filter(|signal| *signal != Self::ExecutionTrace)
+            .collect()
     }
 
     /// The signals every target receives, whatever it names.
@@ -75,11 +82,7 @@ impl Signal {
         )
     }
 
-    /// The severity a record carries on the SDK's own channel.
-    ///
-    /// Exhaustive in both directions, so a seventh signal is a compile error rather than a record
-    /// filed as a permit. The two halves lived in separate `impl` blocks with `_` arms that already
-    /// disagreed about what they covered.
+    /// The severity that routes this signal through the SDK lanes.
     #[must_use]
     pub(crate) fn severity(self) -> opentelemetry::logs::Severity {
         match self {
@@ -89,6 +92,7 @@ impl Signal {
             Self::AgentLogs => opentelemetry::logs::Severity::Trace2,
             Self::AgentMetrics => opentelemetry::logs::Severity::Trace3,
             Self::ControlPlane => opentelemetry::logs::Severity::Info2,
+            Self::ExecutionTrace => opentelemetry::logs::Severity::Debug,
         }
     }
 
@@ -111,19 +115,21 @@ impl Signal {
             Self::AgentLogs => 3,
             Self::AgentMetrics => 4,
             Self::ControlPlane => 5,
+            Self::ExecutionTrace => 6,
         }
     }
 
     /// How many slots such a set needs.
-    pub(crate) const SLOTS: usize = 6;
+    pub(crate) const SLOTS: usize = 7;
 
-    const EVERY: [Self; 6] = [
+    const EVERY: [Self; 7] = [
         Self::PolicyDenied,
         Self::PolicyPermitted,
         Self::AgentTrace,
         Self::AgentLogs,
         Self::AgentMetrics,
         Self::ControlPlane,
+        Self::ExecutionTrace,
     ];
 }
 
@@ -929,26 +935,21 @@ mod tests {
         }
     }
 
-    /// **The default set is EVERY signal**, so a target that names no `include` also receives the
-    /// harness's own spans, logs and metrics.
-    ///
-    /// Named signal by signal rather than by length, because a count passes on a set that holds the
-    /// wrong six. The three relayed signals were opt-in until 2026-09-25: a box that declared
-    /// nothing recorded its own decisions and dropped everything the harness exported, which reads
-    /// as a broken harness rather than as a narrowed target.
+    /// The default set receives every signal except execution events.
     #[test]
-    fn the_default_set_is_every_signal() {
+    fn the_default_set_excludes_only_execution_events() {
         let default = Signal::default_signals();
         for signal in Signal::EVERY {
-            assert!(
+            assert_eq!(
                 default.contains(&signal),
-                "{} must reach a target that names no include",
+                signal != Signal::ExecutionTrace,
+                "{} has the wrong default",
                 signal.as_str()
             );
         }
         assert_eq!(
             default.len(),
-            Signal::EVERY.len(),
+            Signal::EVERY.len() - 1,
             "the default set names no signal twice"
         );
 
@@ -961,6 +962,7 @@ mod tests {
             Signal::PolicyDenied,
             Signal::PolicyPermitted,
             Signal::ControlPlane,
+            Signal::ExecutionTrace,
         ] {
             assert!(!own.is_relayed(), "{} is the box's own", own.as_str());
         }

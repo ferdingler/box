@@ -229,7 +229,20 @@ async fn run_l7_legs(
     );
     // The request permit is consumed at reply time, or when no reply comes.
     let (outcome, response) = upstream
-        .send(state, &method, prepared_request.as_bytes(), &forwarded_body)
+        .send(
+            state,
+            &method,
+            prepared_request.as_bytes(),
+            &forwarded_body,
+            || {
+                state.emitter.execution_transport(
+                    "request_attempt",
+                    &connect.host,
+                    connect.port,
+                    &correlation,
+                );
+            },
+        )
         .await;
     request_permit
         .record_outcome(outcome)
@@ -237,6 +250,12 @@ async fn run_l7_legs(
 
     // --- Response leg: read, scrub, return ---
     let parsed = response?;
+    state.emitter.execution_transport(
+        "response_received",
+        &connect.host,
+        connect.port,
+        &correlation,
+    );
     let mut res = parsed.response;
     // Only the gateway claims a refusal, so a relayed response never carries the marker. An origin
     // that set it would otherwise make a permitted answer read as a denial, with its own first body

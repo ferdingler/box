@@ -32,6 +32,7 @@ const MAXIMUM_DISCOVERY_RESPONSE_BYTES: usize = policy::MAXIMUM_LIST_BYTES;
 
 /// One running MCP server: the child, and the stdin it is fed.
 pub(crate) struct RunningMcpServer {
+    execution_leaf: Option<crate::run::execution_trace::Activity>,
     /// The server name, for the decisions each later frame raises.
     server: String,
     /// The child's standard input.
@@ -541,6 +542,7 @@ impl RunningMcpServer {
                 // An uncontained server retains nothing beyond its own child.
                 #[cfg(unix)]
                 _leaf_retention: None,
+                execution_leaf: None,
             },
             stdout,
         ))
@@ -560,6 +562,13 @@ impl RunningMcpServer {
             .ok_or_else(|| io::Error::other("the contained MCP server exposed no live streams"))?;
         Ok((
             Self {
+                execution_leaf: crate::run::execution_trace::enabled().then(|| {
+                    crate::run::execution_trace::Activity::start(
+                        "leaf",
+                        "box",
+                        &format!("MCP: {}", admitted.name),
+                    )
+                }),
                 server: admitted.name.clone(),
                 stdin: Some(parts.stdin),
                 child: parts.child,
@@ -682,6 +691,7 @@ impl RunningMcpServer {
             }
         }
         wait?;
+        self.execution_leaf.take();
         #[cfg(test)]
         if let Some(completion) = self.stop_and_wait_completion.take() {
             let _ = completion.send(());

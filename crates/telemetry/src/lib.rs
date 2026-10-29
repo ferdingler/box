@@ -8,6 +8,7 @@ mod collector;
 mod config;
 mod correlation;
 mod error;
+mod execution;
 mod export;
 mod receive;
 mod record;

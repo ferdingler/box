@@ -187,7 +187,22 @@ pub(super) fn admit_and_perform(
             determined.as_ref(),
         ));
     }
+    let operation = if matches!(call, OsFunctionCall::Open(_)) {
+        "Prepare file handle"
+    } else {
+        call.name()
+    };
+    let activity = crate::run::execution_trace::enabled().then(|| {
+        crate::run::execution_trace::Activity::filesystem(
+            "monty",
+            operation,
+            &approved.to_string_lossy(),
+        )
+    });
     let (result, resume_with) = perform(&call, &approved);
+    if let Some(activity) = activity {
+        activity.finish(!matches!(result, FsResult::Failed));
+    }
     record(permit, result);
     Ok(resume_with)
 }
@@ -679,6 +694,13 @@ fn perform_rename(
         }
     };
 
+    let activity = crate::run::execution_trace::enabled().then(|| {
+        crate::run::execution_trace::Activity::filesystem(
+            "monty",
+            "Rename",
+            &format!("{} → {}", approved_src.display(), approved_dst.display()),
+        )
+    });
     let (result, resume_with) =
         match rename_approved(&approved_src, &approved_dst, judged_destination) {
             Ok(()) => (
@@ -699,6 +721,9 @@ fn perform_rename(
                         "admission-window",
                         STALE_DESTINATION,
                     ));
+                if let Some(activity) = activity {
+                    activity.finish(false);
+                }
                 record(permit, FsResult::Failed);
                 return Err(MontyException::new(
                     ExcType::PermissionError,
@@ -714,6 +739,9 @@ fn perform_rename(
             "monty-policy",
             determined.as_ref(),
         ));
+    }
+    if let Some(activity) = activity {
+        activity.finish(!matches!(result, FsResult::Failed));
     }
     record(permit, result);
     Ok(resume_with)

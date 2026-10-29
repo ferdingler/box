@@ -1,0 +1,494 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<base target="_blank">
+<title>Box execution</title>
+<style>
+:root{color-scheme:light;--paper:oklch(100% 0 0);--ink:oklch(27% .015 255);--mute:oklch(56% .018 255);--line:oklch(87% .01 255);--blue:oklch(51% .18 255);--wash:oklch(97% .018 255);font-family:Arial,"Segoe UI",sans-serif}*{box-sizing:border-box}body{margin:0;color:var(--ink);background:var(--paper);font-size:14px;line-height:1.4}main{width:100%;max-width:1100px;margin:0 auto;padding:24px 28px 28px}header{display:flex;align-items:center;justify-content:space-between;gap:16px;margin-bottom:16px}h1{margin:0;font-size:21px;font-weight:500}#trace-name{font-size:12px;color:var(--mute);margin:4px 0 0;overflow-wrap:anywhere}.file-label{font-size:13px;color:var(--mute);cursor:pointer;white-space:nowrap;text-decoration:underline;text-underline-offset:3px}.file-label input{position:absolute;opacity:0;width:1px;height:1px}button{font:inherit;color:var(--ink);background:white;border:1px solid var(--line);border-radius:4px;padding:7px 13px;cursor:pointer}button:hover{border-color:var(--mute)}button:disabled{opacity:.35;cursor:default}button:focus-visible,.file-label:focus-within,[role=button]:focus-visible{outline:2px solid var(--blue);outline-offset:3px}#diagram{display:block;width:100%;height:auto;max-height:435px}#diagram text{font-family:Arial,"Segoe UI",sans-serif}#diagram .zone{fill:none;stroke:var(--line);stroke-width:1;stroke-dasharray:4 4}#diagram .zone-label{fill:var(--mute);font-size:11px}#diagram .node rect,#diagram .node path{fill:white;stroke:var(--line);stroke-width:1.3}#diagram .node text{fill:var(--ink);font-size:15px}#diagram .node .sub{fill:var(--mute);font-size:10px}#diagram .node.current rect,#diagram .node.current path{fill:var(--wash);stroke:var(--blue);stroke-width:1.8}#diagram .node.current text{fill:var(--blue)}#diagram .node.ended{opacity:.35}#diagram .node.ended.current{opacity:1}#diagram .current-zone{stroke:var(--blue);stroke-width:1.5}#diagram .arrow{fill:none;stroke:var(--blue);stroke-width:2}#diagram .arrow-hit{fill:none;stroke:transparent;stroke-width:18;cursor:pointer}#diagram .arrow-label{fill:var(--blue);font-size:11px;paint-order:stroke;stroke:white;stroke-width:6;stroke-linejoin:round;cursor:pointer}#diagram .empty-leaves{font-size:12px;fill:var(--mute)}.frame-line{display:flex;gap:12px;align-items:baseline;min-height:32px;margin-top:4px;font-size:13px}.frame-line time{font-variant-numeric:tabular-nums;color:var(--mute);font-size:12px;white-space:nowrap}.frame-line #frame-label{overflow-wrap:anywhere}.details{border-top:1px solid var(--line);padding:10px 0 4px;font-size:12px;display:grid;grid-template-columns:60px minmax(0,1fr);gap:5px 10px}.details dt{color:var(--mute)}.details dd{margin:0;overflow-wrap:anywhere;white-space:pre-wrap}.details dd.command{font-family:Consolas,"Liberation Mono",monospace;font-size:11px}.controls{display:flex;align-items:center;gap:8px;padding:12px 0 16px}#play{min-width:80px}#position{font-size:12px;color:var(--mute);margin-left:6px}.hint{margin-left:auto;color:var(--mute);font-size:11px}.timeline-title{font-weight:400;font-size:13px;margin:0 0 7px}.timeline{border-top:1px solid var(--line);border-bottom:1px solid var(--line);max-height:185px;overflow:auto;scrollbar-width:thin;scrollbar-color:var(--line) white}.event{display:grid;grid-template-columns:65px 210px minmax(0,1fr);gap:12px;width:100%;padding:8px 9px;text-align:left;background:white;border:0;border-bottom:1px solid oklch(94% .005 255);border-radius:0;font-size:12px;align-items:baseline}.event:last-child{border-bottom:0}.event:hover{background:oklch(98% .002 255)}.event.current{background:var(--wash);color:var(--blue)}.event-time{color:var(--mute);font-size:11px;font-variant-numeric:tabular-nums}.event-route,.event-label{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.event-route{font-size:11px;color:var(--mute)}.event.current .event-route{color:var(--blue)}.error{font-size:12px;color:var(--ink);border:1px solid var(--line);padding:10px;margin:0 0 12px}.hidden{display:none!important}@media(max-width:700px){main{padding:18px 14px}#diagram{min-height:260px}.event{grid-template-columns:50px minmax(0,1fr);gap:5px 10px}.event-route{grid-column:2;grid-row:2}.event-label{grid-column:2;grid-row:1}.hint{display:none}#position{margin-left:auto}.frame-line{align-items:flex-start}.timeline{max-height:210px}.details{grid-template-columns:48px minmax(0,1fr)}}
+#diagram [data-arrow]:focus{outline:none}
+#diagram [data-arrow]:focus-visible .arrow{stroke-width:3}
+#diagram .node.unattributed rect{stroke-dasharray:4 3}
+.command-picker{display:flex;align-items:center;gap:12px;margin:0 0 8px;font-size:12px;color:var(--mute)}.command-picker select{min-width:0;flex:1;padding:7px 9px;border:1px solid var(--line);border-radius:4px;background:white;color:var(--ink);font:12px Consolas,"Liberation Mono",monospace;max-width:100%}.command-picker select:focus-visible{outline:2px solid var(--blue);outline-offset:2px}#diagram{max-height:none}#diagram .node.visited rect,#diagram .node.visited path{fill:var(--wash);stroke:oklch(73% .1 255)}#diagram .node.visited text{fill:var(--blue)}#diagram .node.current rect,#diagram .node.current path{stroke:var(--blue);stroke-width:1.8}#diagram .node.ended.visited{opacity:.6}#diagram .node.ended.current{opacity:1}#diagram .arrow.current{stroke:var(--blue);stroke-width:2.5}
+</style>
+<style>
+.loading,.notice{font-size:12px;color:var(--mute);margin:8px 0;overflow-wrap:anywhere}.notice{color:var(--ink)}.command-picker{flex-wrap:wrap}.command-search{min-width:140px;max-width:260px;padding:7px 9px;font:12px Arial,sans-serif;border:1px solid var(--line);border-radius:4px}.command-range{font-size:11px;color:var(--mute)}.timeline{position:relative;height:185px;max-height:185px;overflow-anchor:none}.timeline-inner{position:relative;min-height:1px}.event{position:absolute;left:0;width:100%;height:32px;min-height:32px;padding-top:7px;padding-bottom:7px;overflow:hidden}.event-time,.event-route,.event-label{line-height:17px}.leaf-window-label{font-size:11px;fill:var(--mute)}@media(max-width:700px){.event{display:grid;grid-template-columns:55px minmax(0,1fr);height:32px;min-height:32px}.event-route{display:none}.event-label{grid-column:2;grid-row:1}.command-search{max-width:none;flex:1}.command-picker select{flex-basis:65%}.command-range{width:100%}}
+</style>
+<style>
+main{max-width:1400px}.header-actions{display:flex;align-items:center;gap:16px}.workbench{display:grid;grid-template-columns:252px minmax(0,1fr);gap:24px;align-items:start}.commands-panel{min-width:0;border-right:1px solid var(--line);padding-right:16px}.commands-panel h2{font-size:14px;font-weight:500;margin:0 0 10px}.commands-panel .command-search{display:block;min-width:0;max-width:none;width:100%;margin:0 0 8px}.command-range{display:block;min-height:19px;font-size:11px;color:var(--mute);margin:0 0 5px}.command-list{height:clamp(336px,calc(100dvh - 250px),760px);position:relative;overflow:auto;overflow-anchor:none;scrollbar-width:thin;scrollbar-color:var(--line) white;border-top:1px solid var(--line);border-bottom:1px solid var(--line)}.command-list-inner{position:relative;min-height:1px}.command-row{position:absolute;left:0;width:100%;height:56px;display:block;overflow:hidden;text-align:left;border:0;border-bottom:1px solid oklch(94% .005 255);border-radius:0;padding:8px;background:white}.command-row:hover{background:oklch(98% .004 255)}.command-row.selected{background:var(--wash);color:var(--blue)}.command-row-title{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font:12px Consolas,"Liberation Mono",monospace;line-height:17px}.command-row-meta{display:flex;justify-content:space-between;gap:8px;font-size:10px;color:var(--mute);line-height:17px}.command-empty{position:absolute;top:10px;left:8px;right:8px;color:var(--mute);font-size:12px}.playback{min-width:0}.selected-command{font:12px Consolas,"Liberation Mono",monospace;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-height:22px;margin-bottom:2px}.selected-outside{color:var(--mute);font-size:11px;margin:0 0 8px}.command-list:focus-visible{outline:2px solid var(--blue);outline-offset:3px}@media(max-width:850px){.workbench{grid-template-columns:minmax(0,1fr);gap:16px}.commands-panel{padding-right:0;padding-bottom:12px;border-right:0;border-bottom:1px solid var(--line)}.command-list{height:224px}.commands-panel .command-search{max-width:none}.header-actions{gap:10px}main{padding-left:14px;padding-right:14px}}@media(max-width:420px){header{flex-wrap:wrap}.header-actions{margin-left:auto}}
+</style>
+<style>
+.run-picker{display:flex;align-items:center;gap:8px;margin:0 0 14px;font-size:12px;color:var(--mute);flex-wrap:wrap}.run-picker select{max-width:min(100%,650px);min-width:0;padding:6px 8px;border:1px solid var(--line);background:white;color:var(--ink);border-radius:4px;font:inherit}.run-picker input{width:80px;padding:6px;border:1px solid var(--line);border-radius:4px;font:inherit}.run-picker span{overflow-wrap:anywhere}
+</style>
+</head>
+<body>
+<main>
+<header><div><h1>Box execution</h1><p id="trace-name"></p></div><div class="header-actions"><label class="file-label">Open trace<input id="file" type="file" accept=".json,.jsonl,.ndjson,application/json"></label></div></header>
+<p id="error" class="error hidden" role="status"></p>
+<p id="loading" class="loading hidden" role="status"></p>
+<p id="notice" class="notice hidden"></p>
+<label id="run-picker" class="run-picker hidden">Run<select id="run-select" aria-label="Select Box run"></select><input id="run-number" class="hidden" type="number" min="1" aria-label="Box run number"><span id="run-total"></span></label>
+<div id="workbench" class="workbench">
+<aside id="commands-panel" class="commands-panel">
+<h2>Actions</h2>
+<input id="command-search" class="command-search" type="search" placeholder="Action, tool, path, or #number" aria-label="Search actions, tools, and paths">
+<span id="command-range" class="command-range"></span>
+<div id="command-list" class="command-list" role="listbox" tabindex="0" aria-label="Recorded actions"><div id="command-list-inner" class="command-list-inner"></div><p id="command-empty" class="command-empty hidden">No actions match this search.</p></div>
+</aside>
+<section class="playback">
+<div id="selected-command" class="selected-command"></div>
+<p id="selected-outside" class="selected-outside hidden">The selected action is outside the current results.</p>
+<svg id="diagram" viewBox="0 0 1000 410" role="img" aria-label="Box components and the current execution event"></svg>
+<div class="frame-line"><time id="frame-time"></time><span id="frame-label"></span></div>
+<dl id="details" class="details hidden"></dl>
+<div class="controls"><button id="previous" type="button" aria-label="Previous event">← Previous</button><button id="play" type="button" aria-label="Play execution">Play</button><button id="next" type="button" aria-label="Next event">Next →</button><span id="position"></span><span class="hint">Click the arrow for event details.</span></div>
+<h2 class="timeline-title">Events</h2>
+<div id="timeline" class="timeline" aria-label="Execution events"><div id="timeline-inner" class="timeline-inner"></div></div>
+</section>
+</div>
+</main>
+<script id="trace-data" type="application/json">{"name":"Example execution · synthetic","source":"synthetic","events":[]}</script>
+<script>
+/* Throwaway viewer with bounded rendering and cooperative recording indexes. */
+(() => {
+'use strict';
+const $=id=>document.getElementById(id);
+const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const label=v=>{const s=String(v||'').replace(/^Box::Action::"([^"]+)"$/,'$1');return s.startsWith('/')?s.split('/').filter(Boolean).at(-1):s;};
+const commandLabel=v=>{const s=String(v||'').replace(/\s+/g,' ').trim();const path=s.match(/^(\/\S+)(.*)$/);return path?path[1].split('/').at(-1)+path[2]:s;};
+const names={box:'Box',enforcement:'Box',agent:'Agent',broker:'Broker',shell:'Shell',monty:'Monty',gateway:'Egress gateway',policy:'Policy engine',internet:'Internet',filesystem:'Filesystem',unknown:'Unattributed source'};
+const baseNodes={agent:{x:90,y:158,w:130},broker:{x:285,y:158,w:130},shell:{x:485,y:95,w:140},monty:{x:485,y:220,w:140},gateway:{x:705,y:95,w:154},policy:{x:705,y:220,w:154},internet:{x:915,y:95,w:122},filesystem:{x:915,y:220,w:136,h:54}};
+const leafZone={x:204,y:305,w:614,padding:18,columns:3,nodeWidth:164,rowHeight:80};
+const MAX_ROWS=80,ROW_HEIGHT=32,MAX_COMMAND_ROWS=40,COMMAND_ROW_HEIGHT=56,MAX_LEAVES=60;
+let events=[],spans=new Map(),leafById=new Map(),exchangeParents=new Map(),traces=[],traceIndex=0,frame=0,playing=false,timer=null,start=0,duration=0,detailEvent=null,meta={},drawnEdges=[],loading=false,loadGeneration=0,recordStatus={},timelineKey='',commandListKey='',searchGeneration=0,filteredCommands=null,filterRevision=0,searchPending=false,leafWindow={start:0,end:0,total:0},lastRenderLeaves=[],loadStats={};
+let recordingRuns=[],recordingEnvelope={},runIndex=0,sequenceInfo={count:0,min:Infinity,max:0,invalid:0};
+const currentTrace=()=>traces[traceIndex];
+const eventAt=i=>events[currentTrace()?.indices[i]];
+const eventCount=()=>currentTrace()?.indices.length||0;
+const currentEvent=()=>eventAt(frame);
+const ms=e=>e.ts-(events[currentTrace()?.firstIndex]?.ts??start);
+const timeLabel=n=>(n/1000).toFixed(3)+'s';
+const yieldNow=()=>globalThis.scheduler?.yield?globalThis.scheduler.yield():new Promise(resolve=>setTimeout(resolve,0));
+function progress(text){$('loading').textContent=text;$('loading').classList.remove('hidden');}
+function upperBound(array,value){let lo=0,hi=array.length;while(lo<hi){const mid=(lo+hi)>>>1;if(array[mid]<=value)lo=mid+1;else hi=mid;}return lo;}
+function anyValue(value){
+ if(value==null)return null;if('stringValue' in value)return value.stringValue;if('intValue' in value)return Number(value.intValue);if('doubleValue' in value)return value.doubleValue;if('boolValue' in value)return value.boolValue;
+ if(value.arrayValue)return (value.arrayValue.values||[]).map(anyValue);if(value.kvlistValue)return Object.fromEntries((value.kvlistValue.values||[]).map(entry=>[entry.key,anyValue(entry.value)]));return null;
+}
+function attributes(entries){return Object.fromEntries((entries||[]).map(entry=>[entry.key,anyValue(entry.value)]));}
+function newWireState(){return {otlp:false,execution:0,ignoredUntrusted:0,ignoredOther:0,duplicates:0,seen:new Map()};}
+function* decodeRecord(record,state){
+ if(!record||typeof record!=='object'){yield record;return;}
+ if(!('resourceLogs' in record||'resourceSpans' in record||'resourceMetrics' in record)){yield record;return;}
+ state.otlp=true;
+ for(const resource of record.resourceLogs||[]){
+  const attrs=attributes(resource.resource?.attributes);
+  for(const scope of resource.scopeLogs||[]){
+   if(scope.scope?.name!=='strands-box.execution'){state.ignoredOther+=(scope.logRecords||[]).length;continue;}
+   if(attrs['strands.box.source']!=='box'){state.ignoredUntrusted+=(scope.logRecords||[]).length;continue;}
+   const run=attrs['strands.box.run.id'];if(typeof run!=='string'||!run)throw Error('Execution telemetry is missing strands.box.run.id; runs cannot be joined safely.');
+   for(const log of scope.logRecords||[]){
+    const version=attributes(log.attributes)['strands.box.execution.version'];if(Number(version)!==3)throw Error('Unsupported execution telemetry version: '+(version===undefined?'missing':version)+'.');
+    let event;try{const body=anyValue(log.body);event=typeof body==='string'?JSON.parse(body):body;}catch(error){throw Error('Invalid execution event JSON in run '+run+'.');}
+    if(!event||typeof event!=='object'||Array.isArray(event)||!event.kind)throw Error('Execution telemetry contains an invalid event payload.');
+    if(!metadataRecord(event)&&Number.isSafeInteger(Number(event.sequence))){let seen=state.seen.get(run);if(!seen){seen=new Set();state.seen.set(run,seen);}const sequence=Number(event.sequence);if(seen.has(sequence)){state.duplicates++;continue;}seen.add(sequence);}
+    event.run_id=run;event.box_name=String(attrs['strands.box.name']||'Box');event.execution_version=3;state.execution++;yield event;
+   }
+  }
+ }
+}
+function wireSummary(state){return {otlp:state.otlp,execution:state.execution,ignoredUntrusted:state.ignoredUntrusted,ignoredOther:state.ignoredOther,duplicates:state.duplicates};}
+async function normalizeRecording(input){
+ const data=Array.isArray(input)?{events:input}:input;
+ if(!data||typeof data!=='object')throw Error('Expected a recording or OTLP log request.');
+ if(data._wireDecoded)return data;
+ const source=Array.isArray(data.events)?data.events:('resourceLogs' in data||'resourceSpans' in data||'resourceMetrics' in data)?[data]:null;
+ if(!source)throw Error('Expected an event array or OTLP log request.');
+ const result=[],state=newWireState();let count=0;
+ for(const record of source){for(const event of decodeRecord(record,state)){result.push(event);if((++count&8191)===0)await yieldNow();}}
+ const normalized={...data,events:result,_wireDecoded:true,_wireStats:wireSummary(state)};delete normalized.resourceLogs;delete normalized.resourceSpans;delete normalized.resourceMetrics;return normalized;
+}
+function updateRuns(){
+ const multiple=recordingRuns.length>1,large=recordingRuns.length>200;$('run-picker').classList.toggle('hidden',!multiple);$('run-select').classList.toggle('hidden',large);$('run-number').classList.toggle('hidden',!large);
+ if(!large)$('run-select').innerHTML=recordingRuns.map((run,index)=>`<option value="${index}">${esc(run.name+' · '+(run.id||'legacy recording'))}</option>`).join('');
+ $('run-number').max=recordingRuns.length;$('run-number').value=runIndex+1;$('run-select').value=runIndex;$('run-total').textContent=large?'of '+recordingRuns.length+' · '+(recordingRuns[runIndex]?.id||'legacy recording'):'';
+}
+async function setRun(index){
+ if(!recordingRuns.length)return;runIndex=Math.max(0,Math.min(recordingRuns.length-1,Math.floor(index)));const run=recordingRuns[runIndex];$('run-select').disabled=true;$('run-number').disabled=true;
+ try{const state=await indexRecording({...recordingEnvelope,events:run.records.slice(),run_id:run.id,box_name:run.name,_telemetryExecution:run.telemetry},run.name);updateRuns();return state;}
+ finally{$('run-select').disabled=false;$('run-number').disabled=false;}
+}
+async function prepareRuns(input,filename){
+ const data=await normalizeRecording(input),groups=new Map(),shared=[];recordingEnvelope={...data};delete recordingEnvelope.events;
+ for(let i=0;i<data.events.length;i++){
+  const event=data.events[i];if(event?.kind==='trace_metadata'&&!event.run_id){shared.push(event);recordingEnvelope={...recordingEnvelope,...event};delete recordingEnvelope.events;continue;}
+  const id=typeof event?.run_id==='string'&&event.run_id?event.run_id:null,key=id===null?'legacy:':'run:'+id;let run=groups.get(key);
+  if(!run){run={id,name:event?.box_name||filename||data.name||'Box execution',records:[],telemetry:false};groups.set(key,run);}run.records.push(event);run.telemetry ||= event?.execution_version===3;
+  if((i&8191)===0)await yieldNow();
+ }
+ recordingRuns=[...groups.values()];if(!recordingRuns.length)recordingRuns=[{id:null,name:filename||data.name||'Box execution',records:[],telemetry:false}];
+ for(const run of recordingRuns){if(shared.length)run.records=shared.concat(run.records);}runIndex=0;updateRuns();return setRun(0);
+}
+function metadataRecord(e){return e&&(['trace_metadata','capture_start','capture_loss','capture_summary'].includes(e.kind));}
+function order(a,b){return a.ts-b.ts||(Number(a.sequence)||0)-(Number(b.sequence)||0);}
+async function stableSort(array){
+ let source=array,target=new Array(array.length),budget=performance.now();
+ for(let width=1;width<array.length;width*=2){
+  for(let left=0;left<array.length;left+=width*2){let i=left,j=Math.min(left+width,array.length),end=j,last=Math.min(left+2*width,array.length),k=left;while(i<end&&j<last){target[k++]=order(source[i],source[j])<=0?source[i++]:source[j++];if((k&8191)===0&&performance.now()-budget>8){await yieldNow();budget=performance.now();}}while(i<end){target[k++]=source[i++];if((k&8191)===0&&performance.now()-budget>8){await yieldNow();budget=performance.now();}}while(j<last){target[k++]=source[j++];if((k&8191)===0&&performance.now()-budget>8){await yieldNow();budget=performance.now();}}}
+  [source,target]=[target,source];
+ }
+ return source;
+}
+function captureStatus(capture,invalid=0,unassigned=0,lifecycle=0){
+ let dropped=Math.max(0,Number(meta.dropped_total)||0),captureStart=false,summary=null;
+ for(const record of capture){if(record.kind==='capture_start')captureStart=true;if(record.kind==='capture_summary')summary=record;dropped=Math.max(dropped,Number(record.dropped_total)||0);}
+ const telemetry=Boolean(meta._telemetryExecution),expected=Number(summary?.expected_events),hasExpected=summary?.expected_events!==undefined;
+ const sequenceMismatch=telemetry&&Boolean(summary)&&(!hasExpected||!Number.isSafeInteger(expected)||expected<0||sequenceInfo.invalid>0||sequenceInfo.count!==expected||(expected>0&&(sequenceInfo.min!==1||sequenceInfo.max!==expected))||Number(summary.last_sequence)!==expected);
+ const rejected=Math.max(0,Number(summary?.rejected_events)||0),queueDropped=Math.max(0,Number(summary?.dropped_queue)||0);
+ const truncated=Boolean(meta.truncated_final_line),missingSummary=(captureStart||telemetry)&&!summary,missingStart=telemetry&&!captureStart;
+ return {dropped,queueDropped,rejected,missingStart,missingSummary,sequenceMismatch,expectedEvents:hasExpected?expected:null,receivedSequences:sequenceInfo.count,unassigned,lifecycle,invalid,truncated,incomplete:dropped>0||queueDropped>0||rejected>0||missingStart||missingSummary||sequenceMismatch||summary?.outcome==='incomplete'||invalid>0||truncated,captureSummary:summary};
+}
+function role(id){if(id==='enforcement')return 'box';if(baseNodes[id])return id;const s=spans.get(String(id));return s?.component==='leaf'?String(id):s?.component||id;}
+function endpointName(id){return names[role(id)]||label(spans.get(String(id))?.label)||id||'';}
+function eventTitle(e){return label(e.label||e.action||e.kind)+(e.verdict?' · '+e.verdict:'');}
+function route(e){return e.from&&e.to?endpointName(e.from)+' → '+endpointName(e.to):names[e.component]||label(e.component)||'';}
+function isLifecycle(e){return Boolean(e&&e.kind==='start'&&(e.component==='box'||e.component==='agent'||((e.component==='policy'||e.component==='gateway')&&e.from==='box'&&!e.exchange&&!e.action_type)));}
+function spanKind(e){return isLifecycle(e)?'lifecycle':e.action_type||e.component||'span';}
+function actionLabel(e,kind){if(e.trigger)return String(e.trigger);const name=e.label||e.action||e.action_type||names[e.component]||'Observed event',detail=typeof e.detail==='string'?e.detail:(e.path||e.url||e.uri||'');if(kind==='network')return 'Network · '+(detail||e.url||e.host||label(name));return (kind==='lifecycle'?'Lifecycle · ':'')+label(name)+(detail?' · '+detail:'');}
+function rootOf(id){
+ let source=id==null?null:spans.get(String(id));const path=[];
+ while(source&&source._root===undefined){source._root=-2;path.push(source);const parent=source.parent?spans.get(String(source.parent)):null;source=isLifecycle(parent)?null:parent;}
+ const result=source&&source._root>=0?source._root:-1;for(const entry of path)entry._root=result;return result;
+}
+function newTrace(id,root,trigger){return {id,root,trigger,indices:[],firstSeen:new Map(),leafRefs:[],leafFirst:[],leafMap:null,leafEnds:[],denied:false,failed:false,searchSet:new Set([String(trigger)])};}
+function observedFailure(e){if(e.outcome==='failed')return true;for(const value of [e.exit_code,e.exitCode,e.exit_status,e.status?.code])if(value!==undefined&&value!==null&&/^-?\d+$/.test(String(value))&&Number(value)!==0)return true;if(e.kind==='message'&&/exit (status|code)/i.test(e.label||'')){const match=String(e.detail||'').match(/\bexit\s+(?:status|code)\s*:?\s*(-?\d+)\b/i);if(match&&Number(match[1])!==0)return true;}return false;}
+function indexCommandFields(t,e){
+ if(/^(deny|denied|refused)$/i.test(String(e.verdict||''))){t.denied=true;t.deniedAction=label(e.action||e.label);}
+ if(observedFailure(e))t.failed=true;
+ for(const value of [e.trigger,e.label,e.detail,e.path,e.file_path,e['file.path'],e.tool,e.tool_name,e.program,e.url,e.uri,e.host,e.request_url,e.exchange,e.action_id])if(typeof value==='string'&&value)t.searchSet.add(value);
+ if(e.kind==='start'&&e.component==='leaf'&&!t.safeTool)t.safeTool=label(e.label);
+ if(e.kind==='start'&&e.component==='filesystem'&&typeof e.detail==='string'){
+  const score=/prepare/i.test(e.label)?0:/read|write|list/i.test(e.label)?2:1;
+  if(!t.safeFile||score>(t.safeFileScore??-1)){t.safeFileScore=score;t.safeFile=(/read/i.test(e.label)?'read':/write/i.test(e.label)?'write':/list/i.test(e.label)?'list':label(e.label))+' '+label(e.detail);}
+ }
+ if(e.component==='gateway'&&e.action_type==='network'&&typeof e.detail==='string'&&!t.safeEndpoint)t.safeEndpoint=e.detail;
+}
+function commandOutcome(t){return t.denied?'Denied':t.failed?'Failed':t.root?.kind==='start'?(t.root._endIndex!==null?'Completed':'Incomplete'):t.hasEnd?'Completed':'Observed';}
+function outcomeTitle(t){return [t.denied?'Contains an observed denial.':'',t.failed?'Contains an observed failure.':'',t.root?.kind==='start'?(t.root._endIndex!==null?'Operation end observed.':'No operation end observed.'):t.hasEnd?'End event observed.':'Atomic event observed; no duration is implied.'].filter(Boolean).join(' ');}
+function markFirst(trace,id,local){const r=role(id);if(names[r]&&!trace.firstSeen.has(r))trace.firstSeen.set(r,local);if(leafById.has(String(r))){if(!trace.leafMap)trace.leafMap=new Map();if(!trace.leafMap.has(String(r))){trace.leafMap.set(String(r),trace.leafRefs.length);trace.leafRefs.push(leafById.get(String(r)));trace.leafFirst.push(local);}}}
+async function indexRecording(input,filename){
+ const generation=++loadGeneration,began=performance.now();pause();loading=true;$('file').disabled=true;$('command-search').disabled=true;++searchGeneration;progress('Indexing recording…');$('error').classList.add('hidden');
+ $('play').disabled=true;$('next').disabled=true;$('previous').disabled=true;
+ const data=Array.isArray(input)?{events:input}:input;
+ if(!data||!Array.isArray(data.events)){loading=false;throw Error('Expected an event array or an object with an events array.');}
+ events=data.events;meta=data;frame=0;traceIndex=0;detailEvent=null;$('details').classList.add('hidden');spans=new Map();leafById=new Map();exchangeParents=new Map();traces=[];timelineKey='';commandListKey='';filteredCommands=null;filterRevision++;searchPending=false;$('command-search').value='';
+ let kept=0,invalid=0,sorted=true,previous=null;const capture=[],sequences=new Set();sequenceInfo={count:0,min:Infinity,max:0,invalid:0};
+ if(Array.isArray(data.metadata))capture.push(...data.metadata);
+ for(let i=0;i<events.length;i++){
+  const e=events[i];if(metadataRecord(e)){if(e.kind==='trace_metadata'){meta={...meta,...e,events};if(Array.isArray(e.metadata))capture.push(...e.metadata);}else capture.push(e);continue;}
+  if(!e||!Number.isFinite(Number(e.ts))||!e.kind){invalid++;continue;}
+  const sequence=Number(e.sequence);if(Number.isSafeInteger(sequence)&&sequence>0){sequences.add(sequence);sequenceInfo.min=Math.min(sequenceInfo.min,sequence);sequenceInfo.max=Math.max(sequenceInfo.max,sequence);}else sequenceInfo.invalid++;
+  e.ts=Number(e.ts);if(previous&&order(previous,e)>0)sorted=false;previous=e;events[kept++]=e;
+  if((i&8191)===0){await yieldNow();if(generation!==loadGeneration)return;}
+ }
+ sequenceInfo.count=sequences.size;events.length=kept;if(!kept){recordStatus=captureStatus(capture,invalid);loading=false;$('file').disabled=false;$('loading').classList.add('hidden');$('diagram').innerHTML='';$('timeline-inner').innerHTML='';$('timeline-inner').style.height='0px';$('command-list-inner').innerHTML='';$('command-list-inner').style.height='0px';$('command-empty').classList.remove('hidden');$('command-range').textContent='0 actions';$('selected-command').textContent='';$('trace-name').textContent=meta.name||filename||'Recording';$('frame-label').textContent=meta._wireStats?.otlp?'No trusted execution events in this telemetry file.':'No recorded events.';$('frame-time').textContent='';$('position').textContent='';refreshNotice();return getState();}
+ if(!sorted){progress('Sorting '+kept.toLocaleString()+' events…');events=await stableSort(events);}
+ start=events[0].ts;duration=events.at(-1).ts-start;
+ progress('Indexing '+kept.toLocaleString()+' events…');
+ for(let i=0;i<events.length;i++){
+  const e=events[i];e._index=i;delete e._root;
+  if(e.kind==='start'){e._endIndex=null;spans.set(String(e.id),e);if(e.component==='leaf')leafById.set(String(e.id),e);}
+  else if(e.kind==='end'){const s=spans.get(String(e.id));if(s)s._endIndex=i;}
+  if((i&8191)===0){await yieldNow();if(generation!==loadGeneration)return;}
+ }
+ const groups=new Map(),explicitBySpan=new Map();
+ function group(key,event,kind){
+  if(groups.has(key))return groups.get(key);
+  const index=traces.length,t=newTrace(key,event,actionLabel(event,kind));t.groupKind=kind;t.firstIndex=Infinity;t.hasEnd=false;groups.set(key,index);traces.push(t);return index;
+ }
+ for(let i=0;i<events.length;i++){
+  const e=events[i];delete e._actionRoot;
+  if(e.action_id!==undefined&&e.action_id!==null&&e.action_id!==''){
+   const index=group('action:'+String(e.action_id),e,'explicit'),id=String(e.id),old=explicitBySpan.get(id);
+   if(e.id!==undefined)explicitBySpan.set(id,old===undefined?index:old===index?index:-2);
+  }
+  if((i&8191)===0)await yieldNow();
+ }
+ for(let i=0;i<events.length;i++){
+  const e=events[i];if(e.kind==='start'){
+   const explicit=explicitBySpan.get(String(e.id));
+   if(e.action_id!==undefined&&e.action_id!==null&&e.action_id!=='')e._root=groups.get('action:'+String(e.action_id));
+   else if(explicit>=0)e._root=explicit;
+   else if(e.component==='broker'&&role(e.from)==='agent')e._root=group('span:'+String(e.id),e,'broker');
+   else if(!isLifecycle(e)&&!(e.component==='gateway'&&e.exchange)&&(!spans.has(String(e.parent))||isLifecycle(spans.get(String(e.parent)))))e._root=group('span:'+String(e.id),e,spanKind(e));
+  }
+  if((i&8191)===0)await yieldNow();
+ }
+ const membership=new Int32Array(events.length);membership.fill(-1);const exchanges=new Map();
+ for(let i=0;i<events.length;i++){
+  const e=events[i];let root=e.action_id!==undefined&&e.action_id!==null&&e.action_id!==''?groups.get('action:'+String(e.action_id)):rootOf(e.id);
+  if(root<0&&!isLifecycle(spans.get(String(e.parent))))root=rootOf(e.parent);membership[i]=root;
+  if(root>=0&&e.exchange){const old=exchanges.get(e.exchange);exchanges.set(e.exchange,old===undefined?root:old===root?root:-2);if(!exchangeParents.has(e.exchange)&&(e.parent||e.trigger))exchangeParents.set(e.exchange,e);}
+  if((i&8191)===0){await yieldNow();if(generation!==loadGeneration)return;}
+ }
+ function independentSpan(id){
+  let source=id==null?null:spans.get(String(id));if(!source)return -1;const path=[];
+  while(source&&source._actionRoot===undefined){
+   if(source._root>=0){source._actionRoot=source._root;break;}
+   const linked=source.exchange?exchanges.get(source.exchange):undefined;if(linked>=0){source._actionRoot=linked;break;}
+   source._actionRoot=-2;path.push(source);
+   const parent=source.parent?spans.get(String(source.parent)):null;
+   if(parent&&!isLifecycle(parent)){source=parent;continue;}
+   source._actionRoot=source.exchange?group('exchange:'+source.exchange,source,'network'):group('span:'+String(source.id),source,spanKind(source));break;
+  }
+  let result=source?._actionRoot??-1;
+  if(result<0&&path.length){const root=path.at(-1);result=group('span:'+String(root.id),root,spanKind(root));}
+  for(const entry of path)entry._actionRoot=result;return result;
+ }
+ let unassigned=0,lifecycle=0;
+ for(let i=0;i<events.length;i++){
+  const e=events[i];let root=membership[i];
+  if(root<0&&e.exchange){const linked=exchanges.get(e.exchange);if(linked>=0)root=linked;}
+  if(root<0)root=independentSpan(e.id);
+  if(root<0&&!isLifecycle(spans.get(String(e.parent))))root=independentSpan(e.parent);
+  if(root<0&&e.exchange)root=group('exchange:'+e.exchange,e,'network');
+  if(root<0)root=group(e.id!==undefined&&e.id!==null&&e.id!==''?'observation:'+String(e.id):'event:'+i,e,'observation');
+  const t=traces[root];if(!Number.isFinite(t.firstIndex))t.firstIndex=i;
+  if(e.kind==='start'&&t.root?.kind!=='start'){t.root=e;t.trigger=actionLabel(e,t.groupKind);}
+  if(e.kind==='end')t.hasEnd=true;
+  const local=t.indices.length;t.indices.push(i);indexCommandFields(t,e);
+  if(e.from&&e.to){markFirst(t,e.from,local);markFirst(t,e.to,local);}else markFirst(t,e.component,local);
+  if(e.component==='leaf')markFirst(t,e.id,local);
+  if((i&8191)===0){await yieldNow();if(generation!==loadGeneration)return;}
+ }
+ traces=traces.filter(t=>t.indices.length).sort((a,b)=>a.firstIndex-b.firstIndex);
+ traceIndex=Math.max(0,traces.findIndex(t=>t.groupKind!=='lifecycle'));
+ for(let i=0;i<traces.length;i++){
+  const t=traces[i];t.indices=Uint32Array.from(t.indices);t.leafFirst=Uint32Array.from(t.leafFirst);if(t.root?.component==='broker'&&!t.root.trigger){t.trigger=(/python/i.test(t.root.label)?'Python':'Shell')+' · '+(t.safeTool||t.safeFile||t.safeEndpoint||(t.deniedAction?t.deniedAction+' denied':t.root.id));t.searchSet.add(t.trigger);}t.searchFields=Array.from(t.searchSet);delete t.searchSet;
+  for(let j=0;j<t.leafRefs.length;j++){const s=t.leafRefs[j];if(s._endIndex!==null)t.leafEnds.push(Math.max(s._endIndex,t.indices[t.leafFirst[j]]));}
+  t.leafEnds.sort((a,b)=>a-b);t.leafEnds=Uint32Array.from(t.leafEnds);
+  if((i&511)===0)await yieldNow();
+ }
+ recordStatus=captureStatus(capture,invalid,unassigned,lifecycle);
+ $('trace-name').textContent=meta.name||filename||'Recorded execution';if(meta.source==='synthetic'&&!/synthetic/i.test($('trace-name').textContent))$('trace-name').textContent+=' · synthetic';$('trace-name').classList.toggle('hidden',$('trace-name').textContent.trim().toLowerCase()==='box execution');
+ loading=false;$('file').disabled=false;$('command-search').disabled=false;$('loading').classList.add('hidden');$('play').disabled=false;$('command-search').classList.remove('hidden');$('command-list').scrollTop=0;
+ loadStats={events:events.length,actions:traces.length,commands:traces.length,parseMs:Number(data._parseMs)||0,indexMs:performance.now()-began};buildTimeline();render();renderCommands(true);return getState();
+}
+async function load(input,filename){try{return await prepareRuns(input,filename);}catch(error){loading=false;$('file').disabled=false;$('loading').classList.add('hidden');$('error').textContent=error.message;$('error').classList.remove('hidden');throw error;}}
+function refreshNotice(){
+ const notes=[];if(recordStatus.dropped)notes.push('Incomplete recording: '+recordStatus.dropped.toLocaleString()+' events dropped.');
+ if(recordStatus.queueDropped)notes.push('Incomplete recording: telemetry dropped '+recordStatus.queueDropped.toLocaleString()+' queued records.');
+ if(recordStatus.rejected)notes.push('Incomplete recording: '+recordStatus.rejected.toLocaleString()+' execution events were rejected.');
+ if(recordStatus.missingStart)notes.push('Incomplete recording: execution start marker is missing.');
+ if(recordStatus.sequenceMismatch)notes.push('Incomplete recording: received '+recordStatus.receivedSequences.toLocaleString()+' distinct event sequences; expected '+String(recordStatus.expectedEvents)+'.');
+ if(recordStatus.missingSummary)notes.push('Incomplete recording: final capture summary is missing.');
+ if(recordStatus.truncated)notes.push('Incomplete recording: the final JSONL line was truncated; the valid prefix is retained.');
+ if(recordStatus.incomplete&&!recordStatus.dropped&&!recordStatus.queueDropped&&!recordStatus.rejected&&!recordStatus.missingStart&&!recordStatus.missingSummary&&!recordStatus.sequenceMismatch&&!recordStatus.invalid&&!recordStatus.truncated)notes.push('The recorder reports an incomplete capture.');
+ if(meta._wireStats?.ignoredUntrusted)notes.push(meta._wireStats.ignoredUntrusted.toLocaleString()+' execution-scope records from an untrusted source were ignored.');
+
+ if(recordStatus.invalid)notes.push('Incomplete recording: '+recordStatus.invalid.toLocaleString()+' unsupported records were skipped.');
+ if(currentTrace()?.root?.kind==='start'&&currentTrace().root._endIndex===null)notes.push('This action has no observed end.');
+ $('notice').textContent=notes.join(' ');$('notice').classList.toggle('hidden',!notes.length);
+}
+function leafNodes(){
+ const t=currentTrace();if(!t)return[];const count=upperBound(t.leafFirst,frame);let first=Math.max(0,count-MAX_LEAVES);const e=currentEvent(),target=t.leafMap?.get(String(role(e.from)))??t.leafMap?.get(String(role(e.to)));
+ if(target!==undefined&&target<count&&(target<first||target>=first+MAX_LEAVES))first=Math.max(0,Math.min(count-MAX_LEAVES,target-Math.floor(MAX_LEAVES/2)));
+ const last=Math.min(count,first+MAX_LEAVES),gap=(leafZone.w-2*leafZone.padding-leafZone.columns*leafZone.nodeWidth)/(leafZone.columns-1),shown=[];leafWindow={start:first,end:last,total:count};
+ for(let i=first;i<last;i++){const s=t.leafRefs[i],j=i-first;shown.push({id:s.id,label:s.label,endIndex:s._endIndex,x:leafZone.x+leafZone.padding+leafZone.nodeWidth/2+(j%leafZone.columns)*(leafZone.nodeWidth+gap),y:leafZone.y+61+Math.floor(j/leafZone.columns)*leafZone.rowHeight,w:leafZone.nodeWidth,h:54});}return shown;
+}
+function visitedNodes(){const hot=new Set();for(const [id,first]of currentTrace().firstSeen)if(first<=frame)hot.add(id);for(const leaf of lastRenderLeaves)hot.add(String(leaf.id));return hot;}
+function demo(){
+ const ts=1780000000000,out=[];
+ const e=(t,kind,component,id,from,to,text,extra={})=>out.push({ts:ts+t,kind,component,id,from,to,label:text,...extra});
+ e(0,'start','box','box-1',null,null,'Box started');
+ e(310,'start','broker','broker-1','agent','broker','box.sock',{trigger:'curl https://example.test'});
+ e(320,'start','shell','shell-1','broker','shell','Shell request',{parent:'broker-1'});
+ e(370,'start','gateway','fetch-1','shell','gateway','HTTPS request',{parent:'shell-1'});
+ e(400,'decision','policy','policy-1','gateway','policy','net:https',{parent:'shell-1',verdict:'permit'});
+ e(410,'message','policy','result-1','policy','gateway','Permit returned',{parent:'shell-1',verdict:'permit'});
+ e(460,'message','gateway','transport-1','gateway','internet','HTTPS request',{parent:'shell-1',detail:'example.test'});
+ e(880,'message','gateway','transport-2','internet','gateway','HTTPS response',{parent:'shell-1',detail:'200 OK'});
+ e(900,'end','gateway','fetch-1','gateway','shell','Response received');
+ e(920,'end','shell','shell-1','shell','broker','Shell completed');
+ e(930,'end','broker','broker-1','broker','agent','box.sock');
+ e(1100,'start','broker','broker-2','agent','broker','box.sock',{trigger:'cat input.txt'});
+ e(1110,'start','shell','shell-2','broker','shell','Shell request',{parent:'broker-2'});
+ e(1140,'decision','policy','policy-2','shell','policy','fs:read',{parent:'shell-2',verdict:'permit',detail:'input.txt'});
+ e(1180,'start','filesystem','fs-1','shell','filesystem','Read file',{parent:'shell-2',detail:'input.txt'});
+ e(1210,'end','filesystem','fs-1','filesystem','shell','Read file',{detail:'input.txt'});
+ e(1230,'end','shell','shell-2','shell','broker','Shell completed');
+ e(1240,'end','broker','broker-2','broker','agent','box.sock');
+ return {name:'Example execution · synthetic',source:'synthetic',events:out};
+}
+function node(id,n,text,visited,current,ended=false,sub=''){
+ const cls=[visited?'visited':'',current?'current':'',ended?'ended':'',id==='unknown'?'unattributed':''].join(' '),h=n.h||54;
+ if(id==='internet')return `<g class="node ${cls}" data-node="${id}"><path d="M${n.x-47},${n.y+22} C${n.x-78},${n.y+17} ${n.x-73},${n.y-12} ${n.x-49},${n.y-14} C${n.x-46},${n.y-42} ${n.x-7},${n.y-43} ${n.x+5},${n.y-26} C${n.x+35},${n.y-35} ${n.x+49},${n.y-14} ${n.x+47},${n.y-3} C${n.x+76},${n.y+1} ${n.x+70},${n.y+26} ${n.x+46},${n.y+25} Z"/><text x="${n.x}" y="${n.y+3}" text-anchor="middle">Internet</text></g>`;
+ return `<g class="node ${cls}" data-node="${esc(id)}"><rect x="${n.x-n.w/2}" y="${n.y-h/2}" width="${n.w}" height="${h}" rx="4"/><text x="${n.x}" y="${n.y+(sub?-2:5)}" text-anchor="middle">${esc(text)}</text>${sub?`<text class="sub" x="${n.x}" y="${n.y+15}" text-anchor="middle">${esc(sub)}</text>`:''}</g>`;
+}
+function arrowPoints(from,to,nodes){
+ const a=nodes[from],b=nodes[to];if(!a||!b||from===to)return null;
+ const sourceSide=from==='agent'||from==='unknown',targetSide=to==='agent'||to==='unknown';
+ if(sourceSide!==targetSide){
+  const external=sourceSide?a:b,other=sourceSide?b:a,otherId=sourceSide?to:from;
+  if(['gateway','policy','shell','monty','filesystem'].includes(otherId)){
+   const entry=other.x-other.w/2,approach=entry-24;
+   const points=otherId==='filesystem'
+    ?[[external.x+external.w/2,external.y],[188,external.y],[188,286],[entry-12,286],[entry-12,other.y],[entry,other.y]]
+    :[[external.x+external.w/2,external.y],[188,external.y],[188,52],[approach,52],[approach,other.y],[entry,other.y]];
+   return sourceSide?points:points.reverse();
+  }
+ }
+ const al=leafById.has(String(from)),bl=leafById.has(String(to));
+ if(al!==bl){
+  const leaf=al?a:b,other=al?b:a,inside=other.x>600?803:595,side=leafZone.x+leafZone.w+16,rowGap=leaf.y-35;
+  const points=other===baseNodes.filesystem
+   ?[[other.x-other.w/2,other.y],[side,other.y],[side,rowGap],[leaf.x,rowGap],[leaf.x,leaf.y-(leaf.h||54)/2]]
+   :[[other.x+other.w/2,other.y],[inside,other.y],[inside,286],[side,286],[side,rowGap],[leaf.x,rowGap],[leaf.x,leaf.y-(leaf.h||54)/2]];
+  return al?points.reverse():points;
+ }
+ if(from==='filesystem'||to==='filesystem'){
+  const source=from==='filesystem'?b:a,side=source.x>600?803:595,approach=baseNodes.filesystem.x-baseNodes.filesystem.w/2-12;
+  const points=[[source.x+source.w/2,source.y],[side,source.y],[side,158],[approach,158],[approach,baseNodes.filesystem.y],[baseNodes.filesystem.x-baseNodes.filesystem.w/2,baseNodes.filesystem.y]];
+  return from==='filesystem'?points.reverse():points;
+ }
+ const dx=b.x-a.x,dy=b.y-a.y;
+ if(Math.abs(dx)<40){const dir=Math.sign(dy);return [[a.x,a.y+dir*(a.h||54)/2],[b.x,b.y-dir*(b.h||54)/2]];}
+ const dir=Math.sign(dx);return [[a.x+dir*a.w/2,a.y],[b.x-dir*b.w/2,b.y]];
+}
+function drawDiagram(){
+ const e=currentEvent(),shown=leafNodes(),nodes={...baseNodes};shown.forEach(s=>nodes[String(s.id)]=s);
+ lastRenderLeaves=shown;
+ const hot=visitedNodes(),now=new Set(e.from&&e.to?[role(e.from),role(e.to)]:[role(e.component)]);
+ const rows=Math.max(1,Math.ceil(shown.length/leafZone.columns)),zoneHeight=34+rows*leafZone.rowHeight,height=leafZone.y+zoneHeight+18;
+ $('diagram').setAttribute('viewBox',`0 0 1000 ${height}`);
+ let html='<defs><marker id="arrowhead" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0 0 L10 5 L0 10 Z" fill="var(--blue)"/></marker></defs>';
+ html+=`<rect class="zone ${hot.has('agent')?'current-zone':''}" x="10" y="103" width="160" height="110" rx="4"/><text class="zone-label" x="18" y="95">Agent containment</text><rect class="zone ${hot.has('box')?'current-zone':''}" x="204" y="20" width="614" height="257" rx="4"/><text class="zone-label" x="805" y="42" text-anchor="end">Trusted box process</text><rect id="leaf-containment" class="zone" x="${leafZone.x}" y="${leafZone.y}" width="${leafZone.w}" height="${zoneHeight}" rx="4"/><text class="zone-label" x="${leafZone.x+14}" y="${leafZone.y+20}">Leaf containment</text>`;
+ Object.entries(baseNodes).forEach(([id,n])=>html+=node(id,n,names[id],hot.has(id),now.has(id)));
+ if(hot.has('unknown')){nodes.unknown={x:90,y:260,w:174,h:48};html+=node('unknown',nodes.unknown,names.unknown,true,now.has('unknown'));}
+ shown.forEach(s=>{const text=label(s.label||s.id),ended=s.endIndex!==null&&s.endIndex<=e._index;html+=node(String(s.id),s,text.length>22?text.slice(0,21)+'…':text,hot.has(String(s.id)),now.has(String(s.id)),ended,ended?'ended':'running');});
+ drawnEdges=[];
+ const from=role(e.from),to=role(e.to),points=e.from&&e.to?arrowPoints(from,to,nodes):null;
+ if(points){
+  drawnEdges.push({from,to,event:e});
+  const d=points.map((p,i)=>(i?'L':'M')+p.join(',')).join(' '),mid=points.length===2?[(points[0][0]+points[1][0])/2,(points[0][1]+points[1][1])/2]:points[1];
+  const arrowLabel=from==='agent'&&to==='broker'?'box.sock':label(e.action);
+  html+=`<g data-arrow="0" data-from="${esc(from)}" data-to="${esc(to)}" role="button" tabindex="0" aria-label="${esc(route(e)+': '+eventTitle(e))}"><path class="arrow current" d="${d}" marker-end="url(#arrowhead)"/><path class="arrow-hit" d="${d}"/>${arrowLabel?`<text class="arrow-label" x="${mid[0]}" y="${mid[1]-9}" text-anchor="middle">${esc(arrowLabel)}</text>`:''}</g>`;
+ }
+ if(leafWindow.total>MAX_LEAVES)html+=`<text class="leaf-window-label" x="${leafZone.x+14}" y="${leafZone.y+zoneHeight-8}">Leaves ${leafWindow.start+1}–${leafWindow.end} of ${leafWindow.total} observed; select an event to see its leaf.</text>`;
+ $('diagram').innerHTML=html;
+}
+function buildTimeline(){timelineKey='';$('timeline-inner').style.height=(eventCount()*ROW_HEIGHT)+'px';$('timeline').scrollTop=0;}
+function renderTimeline(follow=true){
+ const list=$('timeline'),count=eventCount();if(!count)return;
+ if(follow){const top=frame*ROW_HEIGHT;if(top<list.scrollTop||top+ROW_HEIGHT>list.scrollTop+list.clientHeight)list.scrollTop=Math.max(0,top-list.clientHeight*.4);}
+ const first=Math.max(0,Math.min(count-MAX_ROWS,Math.floor(list.scrollTop/ROW_HEIGHT)-20)),last=Math.min(count,first+MAX_ROWS),key=traceIndex+':'+first+':'+last;
+ if(key!==timelineKey){let html='';for(let i=first;i<last;i++){const e=eventAt(i);html+=`<button class="event" type="button" data-frame="${i}" style="top:${i*ROW_HEIGHT}px"><span class="event-time">${timeLabel(ms(e))}</span><span class="event-route">${esc(route(e))}</span><span class="event-label">${esc(eventTitle(e))}</span></button>`;}$('timeline-inner').innerHTML=html;timelineKey=key;}
+ $('timeline-inner').querySelectorAll('.current').forEach(el=>{el.classList.remove('current');el.removeAttribute('aria-current');});const selected=$('timeline-inner').querySelector(`[data-frame="${frame}"]`);if(selected){selected.classList.add('current');selected.setAttribute('aria-current','step');}
+}
+function filteredCount(){return filteredCommands===null?traces.length:filteredCommands.length;}
+function traceAtRank(rank){return filteredCommands===null?rank:filteredCommands[rank];}
+function selectedRank(){if(filteredCommands===null)return traceIndex;const rank=upperBound(filteredCommands,traceIndex)-1;return rank>=0&&filteredCommands[rank]===traceIndex?rank:-1;}
+function renderCommands(follow=false){
+ const list=$('command-list'),count=filteredCount(),rank=selectedRank();$('command-list-inner').style.height=(count*COMMAND_ROW_HEIGHT)+'px';
+ if(follow&&rank>=0){const top=rank*COMMAND_ROW_HEIGHT;if(top<list.scrollTop||top+COMMAND_ROW_HEIGHT>list.scrollTop+list.clientHeight)list.scrollTop=Math.max(0,top-list.clientHeight*.35);}
+ const first=Math.max(0,Math.min(count-MAX_COMMAND_ROWS,Math.floor(list.scrollTop/COMMAND_ROW_HEIGHT)-5)),last=Math.min(count,first+MAX_COMMAND_ROWS),key=filterRevision+':'+first+':'+last;
+ if(key!==commandListKey){let html='';for(let r=first;r<last;r++){const index=traceAtRank(r),t=traces[index],text=commandLabel(t.trigger),at=(events[t.firstIndex]?.ts??start)-start;html+=`<button id="command-row-${index}" class="command-row" type="button" role="option" tabindex="-1" data-trace-index="${index}" aria-selected="false" style="top:${r*COMMAND_ROW_HEIGHT}px" title="${esc(t.trigger+' — '+outcomeTitle(t))}"><span class="command-row-title">${esc(text)}</span><span class="command-row-meta"><time title="Time from recording start">${timeLabel(at)}</time><span title="${esc(outcomeTitle(t))}">${commandOutcome(t)}</span></span></button>`;}$('command-list-inner').innerHTML=html;commandListKey=key;}
+ $('command-list-inner').querySelectorAll('.selected').forEach(row=>{row.classList.remove('selected');row.setAttribute('aria-selected','false');});const selected=$('command-row-'+traceIndex);if(selected){selected.classList.add('selected');selected.setAttribute('aria-selected','true');list.setAttribute('aria-activedescendant',selected.id);}else list.removeAttribute('aria-activedescendant');
+ $('command-empty').classList.toggle('hidden',count>0||searchPending);$('command-range').textContent=searchPending?'Searching…':count.toLocaleString()+(count===1?' action':' actions')+(count!==traces.length?' of '+traces.length.toLocaleString():'');
+ $('selected-outside').classList.toggle('hidden',rank>=0||!currentTrace()||searchPending);
+}
+async function searchCommands(){
+ const generation=++searchGeneration;if(loading)return;const query=$('command-search').value.trim().toLowerCase();searchPending=true;renderCommands();
+ if(!query){filteredCommands=null;searchPending=false;filterRevision++;commandListKey='';$('command-list').scrollTop=0;renderCommands(true);return;}
+ const numeric=query.match(/^#(\d+)$/),found=[];let budget=performance.now();
+ for(let i=0;i<traces.length;i++){
+  const t=traces[i];let match=true;
+  if(match&&numeric)match=i===Number(numeric[1])-1;
+  else if(match&&query){match=false;for(let j=0;j<t.searchFields.length;j++){if(t.searchFields[j].toLowerCase().includes(query)){match=true;break;}if((j&255)===0&&performance.now()-budget>8){await yieldNow();budget=performance.now();if(generation!==searchGeneration)return;}}}
+  if(match)found.push(i);if((i&511)===0&&performance.now()-budget>8){await yieldNow();budget=performance.now();if(generation!==searchGeneration)return;}
+ }
+ if(generation!==searchGeneration)return;filteredCommands=Uint32Array.from(found);searchPending=false;filterRevision++;commandListKey='';$('command-list').scrollTop=0;renderCommands(true);
+}
+function triggerFor(e){
+ if(currentTrace()?.root)return currentTrace().trigger;let current=e;const visited=new Set();
+ while(current){if(current.trigger)return current.trigger;const source=spans.get(String(current.id));if(source?.trigger)return source.trigger;let parent=current.parent||source?.parent;if(!parent&&current.exchange){const linked=exchangeParents.get(current.exchange);if(linked?.trigger)return linked.trigger;parent=linked?.parent;}if(!parent||visited.has(String(parent)))break;visited.add(String(parent));current=spans.get(String(parent));}return null;
+}
+function renderDetails(){
+ $('details').classList.toggle('hidden',!detailEvent);if(!detailEvent)return;const e=detailEvent,entries=[['Action',triggerFor(e)],['Time',timeLabel(ms(e))],['Event',e.label||e.action||e.kind],['Route',e.from&&e.to?route(e):null],['Verdict',e.verdict],['Outcome',e.outcome],['Detail',e.detail],['Origin',e.origin],['Provenance',e.provenance],['Action ID',e.action_id],['Exchange',e.exchange]];
+ $('details').innerHTML=entries.filter(([,v])=>v!==undefined&&v!==null&&v!=='').map(([k,v])=>`<dt>${k}</dt><dd class="${k==='Action'?'command':''}">${esc(typeof v==='object'?JSON.stringify(v):v)}</dd>`).join('');
+}
+function render(){
+ if(loading||!currentEvent())return;drawDiagram();renderDetails();renderCommands();refreshNotice();$('selected-command').textContent=commandLabel(currentTrace().trigger);$('selected-command').title=currentTrace().trigger;$('frame-time').textContent=timeLabel(ms(currentEvent()));$('frame-label').textContent=eventTitle(currentEvent());$('position').textContent=(frame+1).toLocaleString()+' / '+eventCount().toLocaleString();$('previous').disabled=frame===0;$('next').disabled=frame===eventCount()-1;renderTimeline();
+}
+function pause(){playing=false;clearTimeout(timer);timer=null;$('play').textContent='Play';$('play').setAttribute('aria-label','Play execution');}
+function move(direction){const next=frame+direction;if(next<0||next>=eventCount())return false;frame=next;detailEvent=null;return true;}
+function advance(){if(!playing||loading)return;if(!move(1)){pause();return;}render();if(frame===eventCount()-1)pause();else timer=setTimeout(advance,700);}
+function play(){if(loading)return;if(playing){pause();return;}if(frame===eventCount()-1){frame=0;buildTimeline();}playing=true;detailEvent=null;$('play').textContent='Pause';$('play').setAttribute('aria-label','Pause execution');render();timer=setTimeout(advance,700);}
+function setFrame(index){if(loading)return;pause();frame=Math.max(0,Math.min(eventCount()-1,Math.floor(index)));detailEvent=null;render();}
+function setTrace(index){if(loading)return;pause();traceIndex=Math.max(0,Math.min(traces.length-1,Math.floor(index)));frame=0;detailEvent=null;buildTimeline();render();renderCommands(true);}
+function seek(time){let lo=0,hi=eventCount();while(lo<hi){const mid=(lo+hi)>>>1;if(ms(eventAt(mid))<=time)lo=mid+1;else hi=mid;}setFrame(Math.max(0,lo-1));}
+function step(direction){if(loading)return;pause();move(direction);render();}
+function showDetails(){pause();const e=drawnEdges[0]?.event;if(e){detailEvent=detailEvent===e?null:e;renderDetails();}}
+function getTraces(offset=0,limit=100,includeEvents=true){const result=[];for(let i=Math.max(0,offset);i<Math.min(traces.length,offset+Math.min(limit,1000));i++){const t=traces[i];result.push({id:t.id,trigger:t.trigger,action:t.trigger,kind:t.groupKind,eventCount:t.indices.length,...(includeEvents?{events:Array.from(t.indices,index=>events[index])}:{})});}return result;}
+function getState(){
+ if(loading||!currentTrace())return {loading,runId:recordingRuns[runIndex]?.id,runIndex,runCount:recordingRuns.length,actionCount:traces.length,traceCount:traces.length,totalEvents:events.length,recordStatus};
+ const t=currentTrace(),first=Math.max(0,traceIndex-40),summaries=[];for(let i=first;i<Math.min(traces.length,first+100);i++)summaries.push({index:i,id:traces[i].id,trigger:traces[i].trigger,events:traces[i].indices.length});const seen=upperBound(t.leafFirst,frame),ended=upperBound(t.leafEnds,currentEvent()._index);
+ return {loading:false,runId:recordingRuns[runIndex]?.id,runIndex,runCount:recordingRuns.length,actionIndex:traceIndex,actionCount:traces.length,action: t.trigger,actionKind:t.groupKind,actionRows:$('command-list-inner').childElementCount,filteredActions:filteredCount(),actions:summaries,traceIndex,traceCount:traces.length,traces:summaries,tracesWindowStart:first,frame,time:ms(currentEvent()),duration,playing,events:eventCount(),totalEvents:events.length,leaves:seen,liveLeaves:seen-ended,visibleLeaves:lastRenderLeaves.length,leafWindow,currentEvent:currentEvent(),command:t.trigger,highlightedNodes:[...visitedNodes()],edges:drawnEdges,recordStatus,loadStats,timings:loadStats,timelineRows:$('timeline-inner').childElementCount,commandOptions:0,commandRows:$('command-list-inner').childElementCount,filteredCommands:filteredCount(),commandQuery:$('command-search').value,commandOutcome:commandOutcome(t),commandSearchPending:searchPending};
+}
+async function* stringChunks(text){for(let i=0;i<text.length;i+=65536){yield text.slice(i,i+65536);await yieldNow();}}
+async function* fileChunks(file){const reader=file.stream().getReader(),decoder=new TextDecoder();try{while(true){const {done,value}=await reader.read();if(done)break;yield decoder.decode(value,{stream:true});}const end=decoder.decode();if(end)yield end;}finally{reader.releaseLock();}}
+async function parseNDJSON(chunks){
+ const parsed=[],wire=newWireState();let buffer='',line=0,budget=performance.now();
+ async function append(record){for(const event of decodeRecord(record,wire)){parsed.push(event);if(performance.now()-budget>8){await yieldNow();budget=performance.now();}}}
+ for await(const chunk of chunks){buffer+=chunk;let cursor=0,end;while((end=buffer.indexOf('\n',cursor))>=0){const text=buffer.slice(cursor,end).trim();line++;if(text){let record;try{record=JSON.parse(text);}catch(error){throw Error('Invalid JSON on line '+line+'.');}await append(record);}cursor=end+1;if(performance.now()-budget>8){await yieldNow();budget=performance.now();}}buffer=buffer.slice(cursor);progress('Reading '+parsed.length.toLocaleString()+' execution records…');}
+ let truncated=false;if(buffer.trim()){let record;try{record=JSON.parse(buffer);}catch(error){truncated=true;}if(!truncated)await append(record);}return {events:parsed,truncated_final_line:truncated,_wireDecoded:true,_wireStats:wireSummary(wire)};
+}
+async function parseJSON(chunks){
+ const parsed=[];let buffer='',scan=0,phase='prefix',prefix='',envelope=false,prefixDepth=0,inString=false,escaped=false,keyStart=-1,lastKey='',expectKey=false,valueStart=-1,arrayState='first',arrayKey='events',depth=0,budget=performance.now();
+ for await(const chunk of chunks){buffer+=chunk;if(phase==='suffix')continue;
+  while(scan<buffer.length){const c=buffer[scan];
+   if(phase==='prefix'){
+    if(inString){if(escaped)escaped=false;else if(c==='\\')escaped=true;else if(c==='"'){inString=false;if(keyStart>=0){lastKey=JSON.parse(buffer.slice(keyStart,scan+1));keyStart=-1;expectKey=false;}}}
+    else if(c==='"'){inString=true;if(prefixDepth===1&&expectKey)keyStart=scan;}
+    else if(c==='{'||c==='['){if(c==='['&&(prefixDepth===0||(prefixDepth===1&&['events','resourceLogs','resourceSpans','resourceMetrics'].includes(lastKey)))){prefix=buffer.slice(0,scan);envelope=prefixDepth===1;arrayKey=lastKey||'events';phase='array';depth=0;lastKey='';}else{prefixDepth++;if(prefixDepth===1&&c==='{')expectKey=true;}}
+    else if(c==='}'||c===']')prefixDepth--;
+    else if(c===','&&prefixDepth===1){expectKey=true;lastKey='';}
+   }else{
+    if(valueStart<0){
+     if(/\s/.test(c)){}
+     else if(c===']'){if(arrayState==='value')throw Error('The JSON event array has a trailing comma.');phase='suffix';buffer=buffer.slice(scan+1);scan=0;break;}
+     else if(arrayState==='separator'){if(c!==',')throw Error('Expected a comma between JSON events.');arrayState='value';}
+     else{if(c!=='{')throw Error('Each event must be a JSON object.');valueStart=scan;depth=1;inString=false;escaped=false;}
+    }
+    else if(inString){if(escaped)escaped=false;else if(c==='\\')escaped=true;else if(c==='"')inString=false;}
+    else if(c==='"')inString=true;
+    else if(c==='{'||c==='[')depth++;
+    else if(c==='}'||c===']'){depth--;if(depth===0){parsed.push(JSON.parse(buffer.slice(valueStart,scan+1)));valueStart=-1;arrayState='separator';}}
+   }
+   scan++;if((scan&8191)===0&&performance.now()-budget>8){await yieldNow();budget=performance.now();}
+  }
+  if(phase==='array'){const keep=valueStart<0?scan:valueStart;buffer=buffer.slice(keep);scan-=keep;if(valueStart>=0)valueStart=0;}
+  progress('Reading '+parsed.length.toLocaleString()+' events…');
+ }
+ if(phase!=='suffix')throw Error('The JSON event array is incomplete.');const outer=JSON.parse(envelope?prefix+'[]'+buffer:'[]'+buffer);return envelope?(arrayKey==='events'?{...outer,events:parsed}:{events:[{...outer,[arrayKey]:parsed}]}):{events:parsed};
+}
+async function readRecording(chunks,ndjson){const began=performance.now(),data=await(ndjson?parseNDJSON(chunks):parseJSON(chunks));data._parseMs=performance.now()-began;return data;}
+async function openFile(file){pause();loading=true;$('file').disabled=true;progress('Reading '+file.name+'…');try{const data=await readRecording(fileChunks(file),/\.(jsonl|ndjson)$/i.test(file.name));return await load(data,file.name);}catch(error){loading=false;$('file').disabled=false;$('loading').classList.add('hidden');$('error').textContent=error.message;$('error').classList.remove('hidden');throw error;}}
+$('run-select').onchange=e=>setRun(Number(e.target.value));$('run-number').onchange=e=>setRun(Number(e.target.value)-1);
+$('play').onclick=play;$('previous').onclick=()=>step(-1);$('next').onclick=()=>step(1);
+let searchTimer;$('command-search').oninput=()=>{clearTimeout(searchTimer);searchTimer=setTimeout(searchCommands,100);};
+let commandScrollQueued=false;$('command-list').onscroll=()=>{if(!commandScrollQueued&&!loading){commandScrollQueued=true;requestAnimationFrame(()=>{commandScrollQueued=false;renderCommands(false);});}};
+$('command-list').onclick=e=>{const row=e.target.closest('[data-trace-index]');if(row){setTrace(Number(row.dataset.traceIndex));$('command-list').focus({preventScroll:true});}};
+$('command-list').onkeydown=e=>{if(!['ArrowUp','ArrowDown','Home','End'].includes(e.key)||!filteredCount())return;e.preventDefault();const rank=selectedRank();let next=e.key==='Home'?0:e.key==='End'?filteredCount()-1:rank<0?(e.key==='ArrowDown'?0:filteredCount()-1):Math.max(0,Math.min(filteredCount()-1,rank+(e.key==='ArrowDown'?1:-1)));setTrace(traceAtRank(next));};
+let scrollQueued=false;$('timeline').onscroll=()=>{if(!scrollQueued&&!loading){scrollQueued=true;requestAnimationFrame(()=>{scrollQueued=false;renderTimeline(false);});}};
+$('timeline').onclick=e=>{const button=e.target.closest('[data-frame]');if(button){setFrame(Number(button.dataset.frame));detailEvent=currentEvent();renderDetails();}};
+$('diagram').onclick=e=>{if(e.target.closest('[data-arrow]'))showDetails();};$('diagram').onkeydown=e=>{if((e.key==='Enter'||e.key===' ')&&e.target.closest('[data-arrow]')){e.preventDefault();showDetails();}};
+document.addEventListener('keydown',e=>{if(['INPUT','BUTTON','SELECT'].includes(document.activeElement.tagName)||document.activeElement.closest('[data-arrow]'))return;if(e.code==='Space'){e.preventDefault();play();}else if(e.key==='ArrowRight'){e.preventDefault();step(1);}else if(e.key==='ArrowLeft'){e.preventDefault();step(-1);}});
+$('file').onchange=async e=>{const file=e.target.files[0];if(!file)return;try{await openFile(file);}catch(error){}e.target.value='';};
+const api={load,openFile,setRun,seek,setFrame,setTrace,setAction:setTrace,getTraces,getActions:getTraces,getState};window.boxExecutionPrototype=api;
+api.ready=(async()=>{loading=true;$('file').disabled=true;const element=$('trace-data');let text=element.textContent;element.textContent='';const ndjson=element.type.includes('ndjson');try{const data=await readRecording(stringChunks(text),ndjson);text=null;return await load(!data.events?.length&&data.source==='synthetic'?demo():data);}catch(error){loading=false;$('file').disabled=false;$('loading').classList.add('hidden');$('error').textContent=error.message;$('error').classList.remove('hidden');throw error;}})();
+})();
+</script>
+</body>
+</html>

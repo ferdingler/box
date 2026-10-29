@@ -232,6 +232,12 @@ fn open_upstream(
             correlation.clone(),
         );
 
+        state.emitter.execution_transport(
+            "connect_attempt",
+            &connect.host,
+            connect.port,
+            correlation,
+        );
         let upstream = match TcpStream::connect(address) {
             Ok(upstream) => upstream,
             Err(error) => {
@@ -241,6 +247,9 @@ fn open_upstream(
                 continue;
             }
         };
+        state
+            .emitter
+            .execution_transport("connected", &connect.host, connect.port, correlation);
 
         let peer = upstream
             .peer_addr()

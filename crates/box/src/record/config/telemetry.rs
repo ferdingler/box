@@ -3,8 +3,7 @@
 //! A declared target REPLACES the box's default destination, so this module owns both halves — what
 //! an operator may write, and the collector request a run builds from what was stored.
 //!
-//! An absent `include` means every signal, so a target receives the harness's own spans, logs and
-//! metrics without naming one. The five words below are how an operator NARROWS that.
+//! An absent `include` selects the default signals; execution traces require an explicit selection.
 //!
 //! The `telemetry` crate's own items are imported by name rather than qualified, because this module
 //! shares its spelling and `telemetry::Signal` would read as `self::Signal`.
@@ -94,6 +93,8 @@ pub(crate) enum SignalGroup {
     Logs,
     /// The agent's own metrics.
     Metrics,
+    /// Additional execution events from the box.
+    Execution,
 }
 
 impl SignalGroup {
@@ -105,17 +106,19 @@ impl SignalGroup {
             Self::Trace => vec![Signal::AgentTrace, Signal::ControlPlane],
             Self::Logs => vec![Signal::AgentLogs],
             Self::Metrics => vec![Signal::AgentMetrics],
+            Self::Execution => vec![Signal::ExecutionTrace],
         }
     }
 
     /// Every word an operator may write, for a refusal that lists them.
-    fn every() -> [Self; 5] {
+    fn every() -> [Self; 6] {
         [
             Self::Deny,
             Self::Permit,
             Self::Trace,
             Self::Logs,
             Self::Metrics,
+            Self::Execution,
         ]
     }
 
@@ -127,6 +130,7 @@ impl SignalGroup {
             Self::Trace => "trace",
             Self::Logs => "logs",
             Self::Metrics => "metrics",
+            Self::Execution => "execution",
         }
     }
 }
@@ -495,13 +499,9 @@ mod tests {
         assert!(refusal.to_string().contains("decisions"), "{refusal}");
     }
 
-    /// **`trace` names both the agent's spans and the control plane**, so neither is selectable on
-    /// its own, and the five words together name every signal the box files.
-    ///
-    /// `logs` and `metrics` are separate words rather than part of `trace`, because a harness log is
-    /// not a span and an operator narrowing to spans must not silently also take metrics.
+    /// Each include word selects its signal group.
     #[test]
-    fn the_five_words_expand_through_the_production_path() {
+    fn the_include_words_expand_through_the_production_path() {
         assert_eq!(
             signals_for(&[SignalGroup::Deny]),
             vec![Signal::PolicyDenied]
@@ -519,20 +519,19 @@ mod tests {
             signals_for(&[SignalGroup::Metrics]),
             vec![Signal::AgentMetrics]
         );
+        assert_eq!(
+            signals_for(&[SignalGroup::Execution]),
+            vec![Signal::ExecutionTrace]
+        );
 
         // Counted against the crate's own set, so a seventh signal no word reaches fails here.
         let every = signals_for(&SignalGroup::every());
         assert_eq!(every.len(), Signal::every().len(), "{every:?}");
     }
 
-    /// **An absent `include` takes every signal**, so an operator who names nothing still receives
-    /// the harness's own logs and metrics.
-    ///
-    /// Read through `target_for`, which is the one path a run takes, rather than through
-    /// `Signal::default_signals` — the box could otherwise call `receiving` with a narrower set and
-    /// this assertion would still pass.
+    /// Execution traces are absent from the default include.
     #[test]
-    fn an_absent_include_takes_every_signal() {
+    fn an_absent_include_excludes_execution_traces() {
         let entry = TelemetryEntry {
             kind: TargetKind::File,
             destination: "/tmp/records.jsonl".to_string(),
@@ -543,10 +542,11 @@ mod tests {
             .expect("the entry is well formed");
         assert_eq!(
             target.signals().len(),
-            Signal::every().len(),
-            "an absent include must reach every signal: {:?}",
+            Signal::default_signals().len(),
+            "an absent include must reach the default signals: {:?}",
             target.signals()
         );
+        assert!(!target.signals().contains(&Signal::ExecutionTrace));
         for expected in [Signal::AgentLogs, Signal::AgentMetrics, Signal::AgentTrace] {
             assert!(
                 target.signals().contains(&expected),
@@ -556,10 +556,34 @@ mod tests {
         }
     }
 
+    #[test]
+    fn execution_requires_an_explicit_include() {
+        let entries: BTreeMap<String, TelemetryEntry> = toml::from_str(
+            r#"
+            [debug]
+            kind = "file"
+            destination = "/var/tmp/box-execution.jsonl"
+            include = ["execution"]
+            "#,
+        )
+        .expect("execution is an include word");
+        let checked = checked(&entries, Path::new("/var/lib/boxes/codex"))
+            .expect("the execution target is valid");
+        let target = target_for(
+            &checked["debug"],
+            None,
+            Path::new("/var/lib/boxes/codex"),
+            None,
+        )
+        .expect("the execution target opens");
+        assert_eq!(target.signals(), &[Signal::ExecutionTrace]);
+        assert!(!signals_for(&[SignalGroup::Trace]).contains(&Signal::ExecutionTrace));
+    }
+
     /// **An empty `include` and a repeated word are both refused in the operator's own vocabulary**,
     /// because the collector's own messages name the record spellings instead.
     #[test]
-    fn an_empty_or_repeated_include_is_refused_naming_the_five_words() {
+    fn an_empty_or_repeated_include_is_refused_naming_the_include_words() {
         let entry = |include: Vec<SignalGroup>| TelemetryEntry {
             kind: TargetKind::File,
             destination: "/tmp/records.jsonl".to_string(),
@@ -574,7 +598,7 @@ mod tests {
         .expect_err("an empty include names no signal")
         .to_string();
         assert!(empty.contains("no signal"), "{empty}");
-        for word in ["deny", "permit", "trace", "logs", "metrics"] {
+        for word in ["deny", "permit", "trace", "logs", "metrics", "execution"] {
             assert!(
                 empty.contains(word),
                 "the refusal must list {word}, which an operator may write: {empty}"

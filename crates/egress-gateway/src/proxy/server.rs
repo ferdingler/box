@@ -33,8 +33,9 @@ pub(crate) fn serve_connection<C: Socket>(
             .into_async()
             .map_err(|e| ProxyError::Io(format!("client socket: {e}")))?;
         let tunnel = Cell::new(None);
+        let exchange = Cell::new(None);
         serve(client, |request, head| {
-            first_request(request, head, state, connect_only, &tunnel)
+            first_request(request, head, state, connect_only, &tunnel, &exchange)
         })
         .await?;
         match tunnel.take() {
@@ -42,6 +43,47 @@ pub(crate) fn serve_connection<C: Socket>(
             None => Ok(()),
         }
     })?
+}
+
+struct ExecutionExchange<'a> {
+    state: &'a SharedState,
+    host: String,
+    port: u16,
+    correlation: RequestId,
+}
+
+impl<'a> ExecutionExchange<'a> {
+    fn begin(
+        state: &'a SharedState,
+        connect: &ConnectRequest,
+        correlation: &RequestId,
+    ) -> Option<Self> {
+        state.emitter.execution_enabled().then(|| {
+            state.emitter.execution_transport(
+                "request_received",
+                &connect.host,
+                connect.port,
+                correlation,
+            );
+            Self {
+                state,
+                host: connect.host.clone(),
+                port: connect.port,
+                correlation: correlation.clone(),
+            }
+        })
+    }
+}
+
+impl Drop for ExecutionExchange<'_> {
+    fn drop(&mut self) {
+        self.state.emitter.execution_transport(
+            "exchange_handled",
+            &self.host,
+            self.port,
+            &self.correlation,
+        );
+    }
 }
 
 /// An admitted CONNECT: the pending upgrade, and the open upstream.
@@ -53,12 +95,13 @@ struct Tunnel {
 }
 
 /// Answer the first request on a connection: a CONNECT, or a plain-HTTP absolute-form request.
-async fn first_request(
+async fn first_request<'a>(
     mut request: Request<Incoming>,
     head: Vec<u8>,
-    state: &SharedState,
+    state: &'a SharedState,
     connect_only: bool,
     tunnel: &Cell<Option<Tunnel>>,
+    exchange: &Cell<Option<ExecutionExchange<'a>>>,
 ) -> Result<WorkloadResponse> {
     // Read before `read_request` strips this hop-by-hop header.
     let token = request
@@ -77,7 +120,7 @@ async fn first_request(
         let connect = ConnectRequest { host, port };
         let correlation = RequestId::unique();
         // Open the upstream before the CONNECT ack, so a denial opens no socket.
-        let upstream = match admit(state, &connect, token.as_deref(), &correlation) {
+        let upstream = match admit(state, &connect, token.as_deref(), &correlation, exchange) {
             Ok(upstream) => upstream,
             Err(refusal) => return Ok(refusal),
         };
@@ -107,7 +150,7 @@ async fn first_request(
     };
     let connect = ConnectRequest { host, port };
     let correlation = RequestId::unique().with_headers(&parsed.headers);
-    let upstream = match admit(state, &connect, token.as_deref(), &correlation) {
+    let upstream = match admit(state, &connect, token.as_deref(), &correlation, exchange) {
         Ok(upstream) => upstream,
         Err(refusal) => return Ok(refusal),
     };
@@ -123,15 +166,17 @@ async fn first_request(
 }
 
 /// The token check, then the connect decisions and the pinned upstream socket.
-fn admit(
-    state: &SharedState,
+fn admit<'a>(
+    state: &'a SharedState,
     connect: &ConnectRequest,
     token: Option<&str>,
     correlation: &RequestId,
+    exchange: &Cell<Option<ExecutionExchange<'a>>>,
 ) -> std::result::Result<TcpStream, WorkloadResponse> {
     if !connect::token_ok(state.config.expected_token.as_deref(), token) {
         return Err(WorkloadResponse::bare(407));
     }
+    exchange.set(ExecutionExchange::begin(state, connect, correlation));
     open_governed_upstream(state, connect, correlation).map_err(|error| error.response())
 }
 

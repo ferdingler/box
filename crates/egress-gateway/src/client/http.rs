@@ -58,6 +58,7 @@ impl Upstream {
         method: &str,
         head: &[u8],
         body: &[u8],
+        before_request: impl FnOnce(),
     ) -> (EffectOutcome, Result<ParsedResponse>) {
         let Self {
             socket,
@@ -76,13 +77,13 @@ impl Upstream {
                 .map_err(|e| lost("upstream socket", e))?;
             let request = (method, head, body);
             match tls {
-                None => round_trip(tcp, &writes, request, &status, max_body).await,
+                None => round_trip(tcp, &writes, request, &status, max_body, before_request).await,
                 Some(name) => {
                     let tls = TlsConnector::from(state.upstream_config.clone())
                         .connect(name, tcp)
                         .await
                         .map_err(|e| lost("upstream TLS handshake", e))?;
-                    round_trip(tls, &writes, request, &status, max_body).await
+                    round_trip(tls, &writes, request, &status, max_body, before_request).await
                 }
             }
         };
@@ -113,6 +114,7 @@ async fn round_trip<S>(
     (method, head, body): (&str, &[u8], &[u8]),
     status: &Cell<Option<u16>>,
     max_body: usize,
+    before_request: impl FnOnce(),
 ) -> std::result::Result<ParsedResponse, NoResponse>
 where
     S: AsyncRead + AsyncWrite + Unpin,
@@ -138,6 +140,7 @@ where
         .await
         .map_err(lost)?;
     let exchange = async move {
+        before_request();
         let response = sender.send_request(stand_in).await.map_err(lost)?;
         status.set(Some(response.status().as_u16()));
         http1::read_response(response, max_body)
@@ -263,7 +266,14 @@ mod tests {
                 seen.extend(rest);
                 seen
             };
-            let client = round_trip(gateway, &writes, ("POST", HEAD, b"ok"), &status, 1024);
+            let client = round_trip(
+                gateway,
+                &writes,
+                ("POST", HEAD, b"ok"),
+                &status,
+                1024,
+                || {},
+            );
             let (result, seen) = tokio::join!(client, server);
             (seen, result, status.get(), writes.get().accepted)
         })

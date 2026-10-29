@@ -18,6 +18,7 @@ pub(crate) mod commands;
 pub(crate) mod configure;
 pub(crate) mod contain;
 pub(crate) mod credential;
+pub(crate) mod execution_trace;
 pub(crate) mod hardening;
 pub(crate) mod hosted;
 mod installation;
