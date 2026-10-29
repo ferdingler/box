@@ -1,4 +1,4 @@
-//! One provider, one lane per target, and the count of what did not fit.
+//! Separate SDK providers for policy records and opt-in execution events.
 
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -16,6 +16,7 @@ use opentelemetry_sdk::trace::{IdGenerator as _, RandomIdGenerator};
 
 use crate::config::TelemetryConfig;
 use crate::error::Result;
+use crate::execution::{Execution, ExecutionLane};
 use crate::export::{BOX_ATTRIBUTE, SOURCE_ATTRIBUTE, SOURCE_BOX, TargetExporter};
 use crate::receive::Receiver;
 use crate::record::{ControlRecord, DecisionRecord, Signal};
@@ -73,9 +74,48 @@ fn shut_down_off_runtime(
 ///
 /// **Only a caller that is not holding a runtime thread may wait.** The batch worker needs that
 /// thread to answer, so waiting on it is what turns this bound into the deadline every time.
+#[cfg(test)]
 fn shut_down_bounded(logs: SdkLoggerProvider, deadline: Duration) -> bool {
     shut_down_off_runtime(logs)
         .is_some_and(|waiting| matches!(waiting.recv_timeout(deadline), Ok(Ok(()))))
+}
+
+fn shut_down_execution_off_runtime(
+    execution: Arc<Execution>,
+) -> Option<std::sync::mpsc::Receiver<OTelSdkResult>> {
+    let (ended, waiting) = std::sync::mpsc::channel();
+    std::thread::Builder::new()
+        .name("strands-box-execution-drain".to_string())
+        .spawn(move || {
+            let _ = ended.send(execution.shutdown());
+        })
+        .ok()
+        .map(|_| waiting)
+}
+
+fn shut_down_all_bounded(
+    logs: SdkLoggerProvider,
+    execution: Option<Arc<Execution>>,
+    timeout: Duration,
+) -> bool {
+    let deadline = std::time::Instant::now() + timeout;
+    let policy = shut_down_off_runtime(logs);
+    let execution_enabled = execution.is_some();
+    let execution = execution.and_then(shut_down_execution_off_runtime);
+    let policy = policy.is_some_and(|waiting| {
+        matches!(
+            waiting.recv_timeout(deadline.saturating_duration_since(std::time::Instant::now())),
+            Ok(Ok(()))
+        )
+    });
+    let execution = !execution_enabled
+        || execution.is_some_and(|waiting| {
+            matches!(
+                waiting.recv_timeout(deadline.saturating_duration_since(std::time::Instant::now())),
+                Ok(Ok(()))
+            )
+        });
+    policy && execution
 }
 
 /// One exporter, shared between the SDK lane and the agent-trace relay.
@@ -130,6 +170,7 @@ pub struct Collector {
     logger: SdkLogger,
     /// The control-plane scope's own logger, so a record names which plane it came from.
     control_logger: SdkLogger,
+    execution: Option<Arc<Execution>>,
     dropped: Arc<AtomicU64>,
     /// The union of every lane's signals, so a record nothing wants costs one load.
     accepts: [bool; Signal::SLOTS],
@@ -159,6 +200,10 @@ impl Drop for Collector {
         if self.shut.swap(true, Ordering::SeqCst) {
             return;
         }
+        if let Some(execution) = &self.execution {
+            execution.close();
+            let _ = shut_down_execution_off_runtime(Arc::clone(execution));
+        }
         let _ = shut_down_off_runtime(self.logs.clone());
     }
 }
@@ -176,6 +221,8 @@ impl Collector {
 
         // One exporter per target, shared by both lanes.
         let mut logs = SdkLoggerProvider::builder().with_resource(resource(&box_name, &run_id));
+        let mut execution =
+            SdkLoggerProvider::builder().with_resource(resource(&box_name, &run_id));
         let mut relays = crate::receive::Relays::default();
         let mut accepts = [false; Signal::SLOTS];
         for target in config.targets() {
@@ -201,9 +248,17 @@ impl Collector {
             if lane[Signal::AgentMetrics.slot()] {
                 relays.metrics.push(Arc::clone(&exporter));
             }
+            if lane[Signal::ExecutionTrace.slot()] {
+                execution = execution.with_log_processor(ExecutionLane::new(Arc::clone(&exporter)));
+                lane[Signal::ExecutionTrace.slot()] = false;
+            }
             // A target that names only relayed signals gets no log lane, because a worker that can
             // never receive a record is a task with nothing to do.
-            if !target.signals().iter().any(|signal| !signal.is_relayed()) {
+            if !target
+                .signals()
+                .iter()
+                .any(|signal| !signal.is_relayed() && *signal != Signal::ExecutionTrace)
+            {
                 continue;
             }
             logs = logs.with_log_processor(TargetLane {
@@ -220,6 +275,8 @@ impl Collector {
         let logs = logs.build();
         let logger = logs.logger(SCOPE);
         let control_logger = logs.logger(CONTROL_SCOPE);
+        let execution = accepts[Signal::ExecutionTrace.slot()]
+            .then(|| Arc::new(Execution::new(execution.build())));
 
         // An agent's span arrives already encoded, so it relays rather than going through the SDK.
         let receiving = tokio::spawn(inbound.serve_forever(
@@ -234,6 +291,7 @@ impl Collector {
             logs,
             logger,
             control_logger,
+            execution,
             dropped,
             accepts,
             port,
@@ -249,6 +307,21 @@ impl Collector {
     #[must_use]
     pub fn port(&self) -> u16 {
         self.port
+    }
+
+    /// Whether an open target receives execution events.
+    #[must_use]
+    pub fn execution_enabled(&self) -> bool {
+        self.execution.is_some() && !self.shut.load(Ordering::Acquire)
+    }
+
+    /// Queue one bounded execution event on the separate execution lanes.
+    pub fn execution(&self, event: serde_json::Value) {
+        if !self.shut.load(Ordering::Acquire)
+            && let Some(execution) = &self.execution
+        {
+            execution.emit(event);
+        }
     }
 
     /// Queue one record.
@@ -347,11 +420,17 @@ impl Collector {
             return;
         }
         let logs = self.logs.clone();
+        let execution = self.execution.clone();
+        if let Some(execution) = &execution {
+            execution.close();
+        }
         // `shutdown` exports what is queued before it stops the exporter, so no separate flush. The
         // blocking task returns at the deadline whatever the batch worker does, so the runtime's own
         // teardown never waits on it.
-        let ended =
-            tokio::task::spawn_blocking(move || shut_down_bounded(logs, DRAIN_DEADLINE)).await;
+        let ended = tokio::task::spawn_blocking(move || {
+            shut_down_all_bounded(logs, execution, DRAIN_DEADLINE)
+        })
+        .await;
         if !matches!(ended, Ok(true)) {
             self.dropped.fetch_add(1, Ordering::Relaxed);
         }

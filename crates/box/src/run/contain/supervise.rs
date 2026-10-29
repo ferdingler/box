@@ -382,6 +382,7 @@ pub(crate) fn isolate(_command: &mut Command) {}
 
 /// A running contained workload, and everything that must outlive it.
 pub(crate) struct Contained {
+    execution_agent: Option<crate::run::execution_trace::Activity>,
     group: ProcessGroup,
     signals: Signals,
 
@@ -445,6 +446,11 @@ impl Contained {
         let group = ProcessGroup::spawn(command).await?;
 
         Ok(Self {
+            execution_agent: Some(crate::run::execution_trace::Activity::start(
+                "agent",
+                "box",
+                "Contained agent",
+            )),
             group,
             signals,
             terminal: None,
@@ -541,6 +547,11 @@ impl Contained {
         };
 
         Ok(Self {
+            execution_agent: Some(crate::run::execution_trace::Activity::start(
+                "agent",
+                "box",
+                "Contained agent",
+            )),
             group,
             signals,
             terminal,
@@ -575,6 +586,7 @@ impl Contained {
             let _ = self.group.stop().await;
         }
         let termination_result = self.group.release().await;
+        self.execution_agent.take();
         let native_result = self.hosted.stop_native();
         // A piped run never claimed the terminal, so there is nothing to give back.
         let terminal_result = match self.terminal.as_mut() {
@@ -738,6 +750,13 @@ impl LeafBox {
         )
         .await?;
 
+        let execution_leaf = crate::run::execution_trace::enabled().then(|| {
+            crate::run::execution_trace::Activity::start(
+                "leaf",
+                "shell",
+                &boundary.executable().display().to_string(),
+            )
+        });
         // The boundary keeps all launch inputs alive until the child exits.
         trampoline.close_setup_writer();
         let output = group.wait_with_output().await;
@@ -756,6 +775,9 @@ impl LeafBox {
             .into());
         }
         let _ = &boundary;
+        if let Some(execution_leaf) = &execution_leaf {
+            execution_leaf.status(captured_status(output.status));
+        }
         Ok(CapturedLeaf {
             status: captured_status(output.status),
             stdout: output.stdout,

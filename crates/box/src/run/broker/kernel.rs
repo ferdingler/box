@@ -16,12 +16,39 @@ pub(super) struct CallKernel {
 }
 
 impl CallKernel {
+    fn traced_path(path: &Resolved) -> String {
+        if crate::run::execution_trace::enabled() {
+            path.path().to_string()
+        } else {
+            String::new()
+        }
+    }
     /// Share the backend while retaining this Call's correlation.
     pub(super) fn new(backend: Arc<dyn Kernel>, correlation: telemetry::Correlation) -> Self {
         Self {
             backend,
             correlation,
         }
+    }
+
+    async fn filesystem<T>(
+        &self,
+        operation: &str,
+        path: &str,
+        future: impl std::future::Future<Output = io::Result<T>>,
+    ) -> io::Result<T> {
+        if !crate::run::execution_trace::enabled() {
+            return future.await;
+        }
+        self.correlation
+            .scope(async {
+                let activity =
+                    crate::run::execution_trace::Activity::filesystem("shell", operation, path);
+                let result = future.await;
+                activity.finish(result.is_ok());
+                result
+            })
+            .await
     }
 }
 
@@ -36,15 +63,30 @@ impl Kernel for CallKernel {
     }
 
     async fn open(&self, proc: &mut Process, path: Resolved, flags: OpenFlags) -> io::Result<Fd> {
-        self.backend.open(proc, path, flags).await
+        let named = Self::traced_path(&path);
+        let operation = if flags.write || flags.create || flags.truncate {
+            "Open for write"
+        } else {
+            "Open for read"
+        };
+        self.filesystem(operation, &named, self.backend.open(proc, path, flags))
+            .await
     }
 
     async fn list_dir(&self, proc: &Process, path: Resolved) -> io::Result<Vec<DirEntry>> {
-        self.backend.list_dir(proc, path).await
+        let named = Self::traced_path(&path);
+        self.filesystem("List directory", &named, self.backend.list_dir(proc, path))
+            .await
     }
 
     async fn change_dir(&self, proc: &mut Process, path: Resolved) -> io::Result<()> {
-        self.backend.change_dir(proc, path).await
+        let named = Self::traced_path(&path);
+        self.filesystem(
+            "Change directory",
+            &named,
+            self.backend.change_dir(proc, path),
+        )
+        .await
     }
 
     async fn stat(&self, proc: &Process, path: Resolved) -> FileStat {
@@ -76,31 +118,69 @@ impl Kernel for CallKernel {
     }
 
     async fn remove_file(&self, proc: &Process, path: Resolved) -> io::Result<()> {
-        self.backend.remove_file(proc, path).await
+        let named = Self::traced_path(&path);
+        self.filesystem("Remove file", &named, self.backend.remove_file(proc, path))
+            .await
     }
 
     async fn remove_dir(&self, proc: &Process, path: Resolved) -> io::Result<()> {
-        self.backend.remove_dir(proc, path).await
+        let named = Self::traced_path(&path);
+        self.filesystem(
+            "Remove directory",
+            &named,
+            self.backend.remove_dir(proc, path),
+        )
+        .await
     }
 
     async fn create_dir(&self, proc: &Process, path: Resolved) -> io::Result<()> {
-        self.backend.create_dir(proc, path).await
+        let named = Self::traced_path(&path);
+        self.filesystem(
+            "Create directory",
+            &named,
+            self.backend.create_dir(proc, path),
+        )
+        .await
     }
 
     async fn rename(&self, proc: &Process, from: Resolved, to: Resolved) -> io::Result<()> {
-        self.backend.rename(proc, from, to).await
+        let named = if crate::run::execution_trace::enabled() {
+            format!("{} → {}", from.path(), to.path())
+        } else {
+            String::new()
+        };
+        self.filesystem("Rename", &named, self.backend.rename(proc, from, to))
+            .await
     }
 
     async fn symlink(&self, proc: &Process, target: &str, link: Resolved) -> io::Result<()> {
-        self.backend.symlink(proc, target, link).await
+        let named = if crate::run::execution_trace::enabled() {
+            format!("{} → {target}", link.path())
+        } else {
+            String::new()
+        };
+        self.filesystem(
+            "Create symlink",
+            &named,
+            self.backend.symlink(proc, target, link),
+        )
+        .await
     }
 
     async fn read_link(&self, proc: &Process, path: Resolved) -> io::Result<String> {
-        self.backend.read_link(proc, path).await
+        let named = Self::traced_path(&path);
+        self.filesystem("Read symlink", &named, self.backend.read_link(proc, path))
+            .await
     }
 
     async fn set_permissions(&self, proc: &Process, path: Resolved, mode: u32) -> io::Result<()> {
-        self.backend.set_permissions(proc, path, mode).await
+        let named = Self::traced_path(&path);
+        self.filesystem(
+            "Set permissions",
+            &named,
+            self.backend.set_permissions(proc, path, mode),
+        )
+        .await
     }
 
     fn now(&self) -> SystemTime {
@@ -117,7 +197,16 @@ impl Kernel for CallKernel {
 
     async fn http_request(&self, mut req: HttpRequest) -> io::Result<HttpResponse> {
         self.correlation.inject_http(&mut req.headers);
-        self.correlation.scope(self.backend.http_request(req)).await
+        self.correlation
+            .scope(async {
+                let _execution_http = crate::run::execution_trace::Activity::start(
+                    "gateway",
+                    "shell",
+                    "Shell HTTP attempt",
+                );
+                self.backend.http_request(req).await
+            })
+            .await
     }
 
     async fn run_script(&self, source: String) -> io::Result<ScriptOutcome> {

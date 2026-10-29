@@ -411,6 +411,9 @@ where
         correlation.clone(),
     );
     // The request permit is consumed at reply time, or when no reply comes.
+    state
+        .emitter
+        .execution_transport("request_attempt", &connect.host, connect.port, &correlation);
     let (request_permit, request_bytes) = deliver_or_record_failure(
         upstream.get_mut(),
         &prepared_request,
@@ -441,6 +444,12 @@ where
             return Err(failure.error);
         }
     };
+    state.emitter.execution_transport(
+        "response_received",
+        &connect.host,
+        connect.port,
+        &correlation,
+    );
     request_permit
         .record_outcome(EffectOutcome::Replied {
             accepted_bytes: request_bytes,

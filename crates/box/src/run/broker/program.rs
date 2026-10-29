@@ -98,7 +98,9 @@ impl Program {
     /// Run one Call and return its status. Its bytes reach [`ProgramOutput`] while this future is
     /// pending, so a caller must poll both concurrently.
     pub(crate) async fn call(&mut self, command: &str) -> CallOutcome {
-        let output = self.shell.run(command).await;
+        let output =
+            crate::run::execution_trace::request("shell", "Shell request", self.shell.run(command))
+                .await;
         CallOutcome {
             status: output.status,
         }

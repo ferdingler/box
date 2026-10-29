@@ -214,6 +214,8 @@ async fn fetch_inner(
     if let Some(body) = request.body {
         builder = builder.body(body);
     }
+    let _execution_fetch =
+        crate::run::execution_trace::Activity::start("gateway", "monty", "Fetch through gateway");
     let mut response = builder.send().await.map_err(|error| error.to_string())?;
 
     let status = i64::from(response.status().as_u16());

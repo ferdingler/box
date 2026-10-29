@@ -849,7 +849,15 @@ async fn serve_transport(
                     source,
                     correlation,
                 } => {
-                    let correlation = *correlation;
+                    let correlation = crate::run::execution_trace::correlate(*correlation);
+                    let execution_broker = crate::run::execution_trace::Activity::ingress(
+                        &correlation,
+                        if python.contains(&id) {
+                            "Python request"
+                        } else {
+                            "Shell request"
+                        },
+                    );
                     if mcp.contains_key(&id) {
                         deny(
                         &frames,
@@ -861,18 +869,20 @@ async fn serve_transport(
                         continue;
                     }
                     if python.contains(&id) {
-                        let recorder = spec.recorder.for_request(correlation);
+                        let recorder = spec.recorder.for_request(correlation.clone());
                         // Stateless, so it runs inline: there is no Program state a concurrent reader
                         // must reach, and no `Input`/`Signal` the interpreter can observe.
-                        let outcome = crate::run::broker::python::run_python(
-                            source,
-                            &spec.reach,
-                            &spec.policy,
-                            &spec.governed,
-                            spec.egress.as_ref(),
-                            &recorder,
-                        )
-                        .await;
+                        let outcome = execution_broker
+                            .scope(correlation.scope(crate::run::broker::python::run_python(
+                                source,
+                                &spec.reach,
+                                &spec.policy,
+                                &spec.governed,
+                                spec.egress.as_ref(),
+                                &recorder,
+                            )))
+                            .await;
+                        execution_broker.status(outcome.status);
                         for (stream, text) in [
                             (Stream::Stdout, outcome.stdout),
                             (Stream::Stderr, outcome.stderr),
@@ -945,10 +955,17 @@ async fn serve_transport(
                     let finished = finished.clone();
                     let request_timeout = spec.request_timeout;
                     tokio::task::spawn_local(async move {
-                        let status = correlation
-                            .scope(run_call(&mut slot, &source, id, request_timeout, &frames))
+                        let status = execution_broker
+                            .scope(correlation.scope(run_call(
+                                &mut slot,
+                                &source,
+                                id,
+                                request_timeout,
+                                &frames,
+                            )))
                             .await
                             .unwrap_or(BOUNDARY_FAILURE_STATUS);
+                        execution_broker.status(status);
                         // A send failure means the connection is already gone, which drops the slot
                         // and reaps the Program — the same outcome by a shorter path.
                         let _ = finished

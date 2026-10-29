@@ -127,6 +127,23 @@ pub(super) async fn drive_monty(
     egress: Option<&EgressRouting>,
     recorder: &Arc<DecisionRecorder>,
 ) -> PythonOutcome {
+    crate::run::execution_trace::request(
+        "monty",
+        "Python request",
+        drive_monty_inner(source, origin, reach, policy, governed, egress, recorder),
+    )
+    .await
+}
+
+async fn drive_monty_inner(
+    source: String,
+    origin: String,
+    reach: &Reach,
+    policy: &PolicyEngine,
+    governed: &GovernedBox,
+    egress: Option<&EgressRouting>,
+    recorder: &Arc<DecisionRecorder>,
+) -> PythonOutcome {
     // **The same reporting as the Shell, or one `context.input.path` means two things.** Without
     // this, a Python `fs:*` request carried the host path while the Shell reported `~/<relative>` —
     let policy_interceptor =

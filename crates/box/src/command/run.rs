@@ -83,6 +83,8 @@ pub(crate) async fn execute(
     let locked = prepare(config, argv)?;
     locked.announce_credential_stores()?;
     let collector = telemetry::open(&locked.root, &locked.record)?;
+    crate::run::execution_trace::initialize(&collector);
+    let execution_run = crate::run::execution_trace::Activity::start("box", "box", "Box run");
     let name = locked.root.name().to_string();
     collector.control(telemetry::ControlRecord::completed(
         telemetry::ControlOperation::BoxStarted,
@@ -105,6 +107,7 @@ pub(crate) async fn execute(
             &refusal.to_string(),
         ),
     });
+    drop(execution_run);
     collector.drained().await;
     outcome
 }
@@ -139,6 +142,8 @@ async fn hosted(
             return Err(refusal);
         }
     };
+    let _execution_policy =
+        crate::run::execution_trace::Activity::start("policy", "box", "Policy engine");
 
     // Validate any declared credsd credential before the workload starts, so a missing daemon or an
     // unusable environment fails here rather than at the first signed request. The check does
@@ -169,6 +174,8 @@ async fn hosted(
         &locked.workspace,
         &home,
     )?;
+    let _execution_gateway =
+        crate::run::execution_trace::Activity::start("gateway", "box", "Egress gateway");
     let site = Site {
         attachment: hosted.attachment(),
         layout: &locked.root,

@@ -653,6 +653,15 @@ impl DecisionRecorder {
         if let Some(context) = &self.correlation {
             decision.correlation = context.clone();
         }
+        crate::run::execution_trace::decision(
+            &decision.action,
+            decision.verdict == EffectiveVerdict::Permit,
+            match &decision.rule {
+                EffectiveRule::Policy(_) => "policy",
+                EffectiveRule::Enforcement(gate) => gate,
+            },
+            &decision.correlation,
+        );
         #[cfg(test)]
         if let Ok(mut recorded) = self.recorded.lock() {
             recorded.push(decision.clone());
@@ -693,6 +702,20 @@ impl EgressDecisionRecorder {
 }
 
 impl Emitter for EgressDecisionRecorder {
+    fn execution_enabled(&self) -> bool {
+        crate::run::execution_trace::enabled()
+    }
+
+    fn execution_transport(
+        &self,
+        stage: &str,
+        host: &str,
+        port: u16,
+        correlation: &egress_gateway::RequestId,
+    ) {
+        crate::run::execution_trace::transport(stage, host, port, correlation);
+    }
+
     fn emit(&self, decision: EgressDecision) {
         let request = &decision.correlation;
         let transport = telemetry::Correlation::from_headers(

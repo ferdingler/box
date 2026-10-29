@@ -8,6 +8,21 @@ use crate::audit::EgressDecision;
 pub trait Emitter: Send + Sync {
     /// Emit one connection or outbound request decision before the effect or refusal.
     fn emit(&self, record: EgressDecision);
+
+    /// Whether execution telemetry is enabled.
+    fn execution_enabled(&self) -> bool {
+        false
+    }
+
+    /// Report one observed transport step.
+    fn execution_transport(
+        &self,
+        _stage: &str,
+        _host: &str,
+        _port: u16,
+        _correlation: &crate::audit::RequestId,
+    ) {
+    }
 }
 
 /// The local stub sink captures emitted records for isolated consumers and tests.

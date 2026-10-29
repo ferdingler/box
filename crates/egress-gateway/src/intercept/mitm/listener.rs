@@ -15,6 +15,45 @@ use crate::audit::{Decision as AuditDecision, EgressDecision, NetworkAuditEvent}
 use crate::effect::{ClaimedEffectPermit, EffectAttempt, EffectOutcome};
 use crate::error::ProxyError;
 
+struct ExecutionExchange<'a> {
+    state: &'a SharedState,
+    connect: &'a ConnectRequest,
+    correlation: RequestId,
+}
+
+impl<'a> ExecutionExchange<'a> {
+    fn begin(
+        state: &'a SharedState,
+        connect: &'a ConnectRequest,
+        correlation: &RequestId,
+    ) -> Option<Self> {
+        state.emitter.execution_enabled().then(|| {
+            state.emitter.execution_transport(
+                "request_received",
+                &connect.host,
+                connect.port,
+                correlation,
+            );
+            Self {
+                state,
+                connect,
+                correlation: correlation.clone(),
+            }
+        })
+    }
+}
+
+impl Drop for ExecutionExchange<'_> {
+    fn drop(&mut self) {
+        self.state.emitter.execution_transport(
+            "exchange_handled",
+            &self.connect.host,
+            self.connect.port,
+            &self.correlation,
+        );
+    }
+}
+
 /// A counting semaphore bounding the number of in-flight connection threads, with no external
 /// dependency. `acquire` blocks the accept loop until a slot frees, so
 /// an untrusted workload cannot make the adapter spawn unbounded OS threads (backpressure, not an
@@ -138,6 +177,7 @@ fn handle_tls_connect(
     }
 
     let correlation = RequestId::unique();
+    let _execution_exchange = ExecutionExchange::begin(state, &connect, &correlation);
 
     // Shared L4: the pre-resolution `net:connect`, resolve-once/pin, and the per-address
     // `net:connect` effect. Claimed and opened BEFORE the CONNECT ack, so a denial returns 403 without
@@ -236,6 +276,7 @@ fn handle_plain_http(
         return Ok(());
     }
     let correlation = RequestId::unique().with_headers(&parsed.headers);
+    let _execution_exchange = ExecutionExchange::begin(state, &connect, &correlation);
 
     // Shared L4: the pre-resolution `net:connect`, resolve-once/pin, and the per-address
     // `net:connect` effect — identical to the CONNECT path. No CONNECT ack for a plain-HTTP request.
@@ -325,6 +366,7 @@ fn handle_connection_unix(mut client: UnixStream, state: &SharedState) -> Result
     }
 
     let correlation = RequestId::unique();
+    let _execution_exchange = ExecutionExchange::begin(state, &connect, &correlation);
 
     // Shared L4: the pre-resolution `net:connect`, resolve-once/pin, and the per-address
     // `net:connect` effect — transport-agnostic, so the AF_UNIX path reuses it unchanged. Opened
@@ -514,6 +556,12 @@ fn open_upstream(
             correlation.clone(),
         );
 
+        state.emitter.execution_transport(
+            "connect_attempt",
+            &connect.host,
+            connect.port,
+            correlation,
+        );
         let upstream = match TcpStream::connect(address) {
             Ok(upstream) => upstream,
             Err(error) => {
@@ -523,6 +571,9 @@ fn open_upstream(
                 continue;
             }
         };
+        state
+            .emitter
+            .execution_transport("connected", &connect.host, connect.port, correlation);
 
         let peer = upstream
             .peer_addr()
