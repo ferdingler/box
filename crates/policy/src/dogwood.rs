@@ -1407,6 +1407,7 @@ fn outcome_fields(outcome: &Outcome<'_>) -> Vec<(&'static str, Value)> {
             method,
             path,
             delivery,
+            intercepted,
             ..
         } => vec![
             (attr::HOST, Value::String((*host).to_string())),
@@ -1419,7 +1420,7 @@ fn outcome_fields(outcome: &Outcome<'_>) -> Vec<(&'static str, Value)> {
                 attr::BODY_BYTES,
                 Value::Int(clamp(delivery.accepted_bytes())),
             ),
-            (attr::INTERCEPTED, Value::Bool(true)),
+            (attr::INTERCEPTED, Value::Bool(*intercepted)),
         ],
         Outcome::ShellRun {
             command,
@@ -1994,6 +1995,7 @@ when temporal {
             path: "/v1",
             delivery: crate::Delivery::Completed { bytes },
             status: Some(200),
+            intercepted: true,
         }
     }
 
@@ -2065,6 +2067,7 @@ when temporal {
                         path: "/v1",
                         delivery: crate::Delivery::Completed { bytes: 10 },
                         status: Some(200),
+                        intercepted: true,
                     }
                 )
                 .is_err(),
@@ -2150,6 +2153,7 @@ when temporal {
             path: "/v1",
             delivery: crate::Delivery::Completed { bytes: 150 },
             status: Some(200),
+            intercepted: true,
         };
         assert!(
             engine
