@@ -1,28 +1,4 @@
-//! Resolving a *named* AWS profile, so `aws://<profile>` signs as the identity it names.
-//!
-//! **Why this exists.** `EnvAwsProvider` reads `AWS_*` from the daemon's environment and refuses a
-//! named profile rather than substituting the ambient identity — an operator who names an identity
-//! gets that identity or an error. That refusal was correct and complete: it left
-//! `aws://<profile>` with no provider that could honour it, so every such route failed at the first
-//! request. Measured 2026-08-19 with a Codex workload: `credential denied: … the ambient AWS
-//! provider cannot sign as the declared profile "codex-DO-NOT-DELETE"`, which reached the workload as
-//! `403 blocked by egress control` and named nothing.
-//!
-//! This module closes that gap behind the existing vocabulary. `aws://<profile>` was already a
-//! documented spelling that `box.toml` already parses; nothing here adds an operator-facing surface.
-//!
-//! **Static keys only. Every other shape is refused by name.**
-//!
-//! `credential_process` was supported for part of one day and is now refused, because honouring it
-//! means the daemon executes a program named by `~/.aws/config`. No floor defends that file, and when
-//! the project is the operator's home the starter policy's own `fs:write` rule reaches it — so an
-//! agent write became daemon code execution outside containment. Separately, the daemon's environment
-//! is the storage for every `env://` route, so an inherited environment handed the helper every
-//! opaque secret the box held. Refusing the shape removes both at once.
-//!
-//! A profile that assumes a role or uses SSO needs an HTTP call to STS, and this crate holds no HTTP
-//! client, so those refuse with the setting that caused it rather than falling back to an identity the
-//! operator did not name.
+//! Static AWS profiles and startup capture of credential helpers.
 
 use std::path::PathBuf;
 
@@ -37,6 +13,29 @@ use crate::{CredentialError, Result};
 /// the ambient identity: that would sign as one principal while the audit record attests another.
 pub(crate) fn resolve_profile(profile: &str) -> Result<AwsSessionCredentials> {
     choose(profile, profile_settings(profile)?)
+}
+
+pub(crate) fn prepare_process(
+    profile: &str,
+) -> Result<Option<super::prototype_aws_process::CredentialProcess>> {
+    let Ok(mut settings) = profile_settings(profile) else {
+        return Ok(None);
+    };
+    let Some(command) = settings.remove("credential_process") else {
+        return Ok(None);
+    };
+    if let Some(setting) = unsupported_setting(&settings) {
+        return Err(CredentialError::Credential(format!(
+            "AWS profile {profile:?} combines credential_process with unsupported {setting}"
+        )));
+    }
+    if settings.contains_key("aws_access_key_id") || settings.contains_key("aws_secret_access_key")
+    {
+        return Err(CredentialError::Credential(format!(
+            "AWS profile {profile:?} combines credential_process with static keys"
+        )));
+    }
+    super::prototype_aws_process::CredentialProcess::capture(profile, &command).map(Some)
 }
 
 /// Decide what a profile's settings mean, separately from finding them.

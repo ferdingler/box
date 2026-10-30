@@ -12,6 +12,7 @@ mod credsd;
 mod env;
 mod file;
 mod op;
+mod prototype_aws_process;
 
 pub(crate) use aws::{
     AmbientFallbackPolicy, AwsAcquisition, AwsResolution, AwsSource, credsd_session_credentials,

@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 use crate::attach::{Attachment, Inbound, Outbound, Redactions};
 use crate::config::MissingRoutePolicy;
 use crate::model::RouteKind;
-use crate::sources::{AmbientFallbackPolicy, CREDSD_SCHEME, resolve_credsd_socket};
+use crate::sources::{AwsSource, CREDSD_SCHEME, resolve_credsd_socket};
 use crate::{
     Backend, CredentialDiagnostic, CredentialError, Destination, DestinationPattern, InjectMode,
     Locator, Opened, Phantom, PhantomCheck, PhantomToken, RequestId, Result, RouteSpec, Secret,
@@ -96,10 +96,8 @@ pub struct Vault {
     /// The backend, retained because a signed route resolves its credentials per request (they
     /// expire), unlike an opaque secret which is resolved once at open.
     backend: Backend,
-    /// Whether a signed route may fall back to the ambient AWS provider chain when it declares no
-    /// scoped profile. Held here because the resolve happens per request, so the policy has to outlive
-    /// the open that chose it.
-    ambient_policy: AmbientFallbackPolicy,
+    /// The AWS source and the credential helpers captured before the workload starts.
+    aws_source: AwsSource,
     /// The acquisition-audit sink. Every resolve emits one record through it, success or
     /// failure; the default discards, since the shared L2 lane does not exist yet.
     emitter: Box<dyn crate::Emitter>,
@@ -125,7 +123,7 @@ impl Vault {
             opaque: Vec::new(),
             signed_aws: Vec::new(),
             backend,
-            ambient_policy,
+            aws_source: AwsSource::with_policy(ambient_policy),
             emitter,
             credsd_socket: None,
         };
@@ -148,6 +146,8 @@ impl Vault {
                 RouteKind::SignedAws { config } => {
                     if config.scheme() == CREDSD_SCHEME {
                         declares_credsd = true;
+                    } else if config.scheme() == "aws" {
+                        vault.aws_source.prepare(config)?;
                     }
                     vault
                         .signed_aws
@@ -268,9 +268,9 @@ impl Vault {
         self.emitter.as_ref()
     }
 
-    /// The ambient-fallback policy a signed route's credentials are resolved under.
-    pub(crate) fn ambient_policy(&self) -> AmbientFallbackPolicy {
-        self.ambient_policy
+    /// The retained AWS credential source.
+    pub(crate) fn aws_source(&self) -> &AwsSource {
+        &self.aws_source
     }
 
     /// The resolved `credsd` socket, for the per-request credsd resolve in `legs`. `Some` whenever a

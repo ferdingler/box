@@ -525,6 +525,7 @@ impl AwsCredentialProvider for EnvAwsProvider {
 pub(crate) struct AwsSource {
     provider: Box<dyn AwsCredentialProvider>,
     ambient_policy: AmbientFallbackPolicy,
+    processes: std::collections::BTreeMap<String, super::prototype_aws_process::CredentialProcess>,
 }
 
 impl AwsSource {
@@ -540,6 +541,7 @@ impl AwsSource {
         Self {
             provider: Box::new(DefaultAwsProvider),
             ambient_policy: policy,
+            processes: std::collections::BTreeMap::new(),
         }
     }
 
@@ -553,7 +555,17 @@ impl AwsSource {
         Self {
             provider,
             ambient_policy: policy,
+            processes: std::collections::BTreeMap::new(),
         }
+    }
+
+    pub(crate) fn prepare(&mut self, loc: &Locator) -> Result<()> {
+        if let Some(profile) = Self::parse_profile(loc)?
+            && let Some(process) = super::aws_profile::prepare_process(&profile)?
+        {
+            self.processes.insert(profile, process);
+        }
+        Ok(())
     }
 
     /// Resolve an AWS credential reference to [`AwsSessionCredentials`] material.
@@ -573,7 +585,10 @@ impl AwsSource {
             }
         };
 
-        let credentials = self.provider.provide(provider_profile)?;
+        let credentials = match provider_profile.and_then(|profile| self.processes.get(profile)) {
+            Some(process) => process.resolve()?,
+            None => self.provider.provide(provider_profile)?,
+        };
         Ok(AwsResolution {
             credentials: Zeroizing::new(credentials),
             acquisition,
