@@ -64,8 +64,6 @@ def main():
         reference = "aws-chain://"
     else:
         reference = f"aws://{args.profile or 'bedrock'}"
-        for name in ("AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY", "AWS_SESSION_TOKEN"):
-            environment.pop(name, None)
     binary = ROOT / "target/debug/strands-box"
     probe = ROOT / "target/debug/box-egress-probe"
     if not binary.is_file() or not probe.is_file():

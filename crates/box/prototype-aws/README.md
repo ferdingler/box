@@ -1,6 +1,6 @@
 # AWS credential prototype
 
-This throwaway prototype adds the Rust SDK credential chain and AWS `credential_process` profiles to Box. It is for evaluation, not release. Neither path uses `credsd`.
+This throwaway prototype uses the Rust SDK for both automatic AWS credential discovery and explicit profiles. It is for evaluation, not release. Neither path uses `credsd`.
 
 ## Build and run
 
@@ -32,7 +32,7 @@ python3 crates/box/prototype-aws/run.py chain
 
 Use `chain --profile bedrock` to set `AWS_PROFILE` for the check. Use `chain --seed-profile bedrock` to fetch credentials through that profile's helper in the parent process and pass them to Box as environment variables. This checks the environment provider without writing keys to a file.
 
-To use the existing explicit profile path:
+To select one profile directly:
 
 ```toml
 [egress.aws]
@@ -40,24 +40,24 @@ destinations = ["sts.us-east-1.amazonaws.com"]
 secret.ref = "aws://bedrock"
 ```
 
-The profile remains in the host's AWS configuration. Run:
+This uses the SDK's `ProfileFileCredentialsProvider`. Exported keys and `AWS_PROFILE` do not override the selected profile. A role profile can still name the environment or metadata as its credential source. Missing or unusable profiles fail without falling back to another identity. The SDK owns static keys, `credential_process`, SSO, and role resolution. Run:
 
 ```sh
 python3 crates/box/prototype-aws/run.py profile --profile bedrock
 ```
 
-Each smoke run makes two STS `GetCallerIdentity` calls from one contained workload. Success requires HTTP 200 for both. The runner creates temporary Box state under `/var/tmp` and removes it afterward. The [verification record](./verification.json) identifies the checked source, binaries, and results. The chain passed with exported credentials, an ADA-backed profile, and a loopback container-credential fixture. The explicit profile path also passed. All four checks used real STS requests and an unusable `CREDSD_SOCKET`.
+Each smoke run makes two STS `GetCallerIdentity` calls from one contained workload. Success requires HTTP 200 for both. The runner creates temporary Box state under `/var/tmp` and removes it afterward. The [verification record](./verification.json) identifies the checked source, binaries, and results. The chain passed with exported credentials, an ADA-backed profile, and a loopback container-credential fixture. The explicit profile path also passed with deliberately incorrect exported keys and a different `AWS_PROFILE`. All four checks used real STS requests and an unusable `CREDSD_SOCKET`.
 
 ## Implementation and limits
 
-`prototype_aws_chain.rs` retains one SDK chain on a dedicated worker for each vault that declares it. This bridges the asynchronous SDK to the synchronous signer. Box resolves credentials once at startup, then again for each signed request. Initialization and each resolution have a 30-second deadline. The caller waits at most 35 seconds for a reply. One request can wait behind an active request; further concurrent requests fail closed. The worker exits when its request channel closes. Invalid fields and expired credentials are refused. Raw provider errors are withheld from Box's error messages.
+`prototype_aws_sdk.rs` is the shared adapter. It retains one provider on a dedicated worker for each selected source in a vault. This bridges the asynchronous SDK to the synchronous signer. The default chain resolves once at startup, then for each signed request. Explicit profiles initialize lazily on the first signed request, then resolve on each request. All acquisitions use the existing audit path.
+
+Each resolution, including lazy provider construction, has a 30-second deadline. The caller waits at most 35 seconds for a reply. One request can wait behind an active request; further concurrent requests fail closed. The worker exits when its request channel closes. Invalid fields and expired credentials are refused. Raw provider errors are withheld from Box's error messages.
 
 Box adds no outer credential cache. It retains the SDK providers and their internal state, but does not use the SDK service client's identity cache. Providers can obtain fresh credentials on each request. Environment credentials cannot renew themselves, and changing a parent shell does not change an existing Box process.
 
-The SDK chain can access metadata endpoints and run a profile's helper as trusted host code. On Unix, the SDK's helper provider uses `sh -c` and inherits the host environment. It does not use the explicit profile runner's environment filter, output limit, or process-group cleanup. A Box timeout stops waiting for that SDK operation; it does not guarantee termination of a helper or its descendants. SDK internals also do not share all of Box's buffer-wiping rules. These are prototype limits that need review before release.
+Both paths use the SDK's helper runner. On Unix it uses `sh -c` and inherits the trusted host environment. There is no Box-specific executable pin, environment filter, or output limit. A timeout stops waiting for the SDK operation; it does not guarantee termination of a helper or its descendants. SDK internals also do not share all of Box's buffer-wiping rules. These are prototype limits that need review before release.
 
-The separate `aws://PROFILE` path still uses `prototype_aws_process.rs`. Box captures the helper command, executable path, arguments, and allowed environment before starting the workload. It runs the captured helper for every signed request without an implicit shell. The runner has a 30-second deadline and a 1 MiB output limit, discards stderr, and stops the helper process group on failure. Its environment filter excludes AWS keys and unrelated tokens. A profile cannot combine this helper with static keys or role settings.
-
-The explicit runner checks executable metadata, but leaves a race before execution. Scripts, libraries, and helper configuration remain mutable. Its expiration parser also accepts some invalid signed offset components. Both helpers are trusted host code; neither is contained.
+The custom helper runner, timestamp parser, and profile-file parser are removed. The SDK's profile parsing, precedence, and helper behavior apply to both paths.
 
 Existing endpoint and signing limits still apply. Live checks use only `sts.us-east-1.amazonaws.com` on Linux. They check HTTP status, not the returned identity. Deployment on ECS, EKS, or EC2, SSO, and renewal after actual credential expiry need separate validation.

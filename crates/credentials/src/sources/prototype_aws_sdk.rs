@@ -1,11 +1,15 @@
-//! The Rust SDK credential chain behind the synchronous signing boundary.
+//! Rust SDK credential providers behind the synchronous signing boundary.
 
 use std::sync::mpsc::{self, SyncSender};
 use std::time::{Duration, SystemTime};
 
 use aws_config::default_provider::credentials::DefaultCredentialsChain;
+use aws_config::environment::region::EnvironmentVariableRegionProvider;
+use aws_config::imds::region::ImdsRegionProvider;
+use aws_config::meta::region::RegionProviderChain;
+use aws_config::profile::{ProfileFileCredentialsProvider, ProfileFileRegionProvider};
 use aws_config::provider_config::ProviderConfig;
-use aws_credential_types::provider::ProvideCredentials;
+use aws_credential_types::provider::{ProvideCredentials, SharedCredentialsProvider};
 use aws_smithy_http_client::{Builder, tls};
 use zeroize::Zeroizing;
 
@@ -16,16 +20,17 @@ const REPLY_TIMEOUT: Duration = Duration::from_secs(35);
 
 type Reply = SyncSender<Result<Zeroizing<AwsSessionCredentials>>>;
 
-pub(super) struct CredentialChain {
+pub(super) struct SdkCredentials {
     requests: SyncSender<Reply>,
 }
 
-impl CredentialChain {
-    pub(super) fn open() -> Result<Self> {
+impl SdkCredentials {
+    pub(super) fn open(profile: Option<String>) -> Result<Self> {
+        let warm_chain = profile.is_none();
         let (requests, receiver) = mpsc::sync_channel::<Reply>(1);
         let (ready, initialized) = mpsc::sync_channel(1);
         std::thread::Builder::new()
-            .name("box-aws-chain".to_string())
+            .name("box-aws-credentials".to_string())
             .spawn(move || {
                 let runtime = match tokio::runtime::Builder::new_current_thread()
                     .enable_all()
@@ -37,38 +42,20 @@ impl CredentialChain {
                         return;
                     }
                 };
-                let chain = runtime.block_on(async {
-                    tokio::time::timeout(LOAD_TIMEOUT, async {
-                        let http = Builder::new()
-                            .tls_provider(tls::Provider::Rustls(
-                                tls::rustls_provider::CryptoMode::Ring,
-                            ))
-                            .build_https();
-                        let chain = DefaultCredentialsChain::builder()
-                            .configure(ProviderConfig::default().with_http_client(http))
-                            .build()
-                            .await;
-                        resolve(&chain).await?;
-                        Ok(chain)
-                    })
-                    .await
-                    .map_err(|_| failure("initialization timed out"))?
-                });
-                let chain = match chain {
-                    Ok(chain) => chain,
-                    Err(error) => {
-                        let _ = ready.send(Err(error));
-                        return;
-                    }
-                };
+                let mut provider = None;
                 if ready.send(Ok(())).is_err() {
                     return;
                 }
                 while let Ok(reply) = receiver.recv() {
                     let result = runtime.block_on(async {
-                        tokio::time::timeout(LOAD_TIMEOUT, resolve(&chain))
-                            .await
-                            .map_err(|_| failure("credential resolution timed out"))?
+                        tokio::time::timeout(LOAD_TIMEOUT, async {
+                            if provider.is_none() {
+                                provider = Some(load_provider(profile.as_deref()).await);
+                            }
+                            resolve(provider.as_ref().expect("provider was loaded")).await
+                        })
+                        .await
+                        .map_err(|_| failure("credential resolution timed out"))?
                     });
                     let _ = reply.send(result);
                 }
@@ -77,7 +64,11 @@ impl CredentialChain {
         initialized
             .recv_timeout(REPLY_TIMEOUT)
             .map_err(|_| failure("worker initialization did not complete"))??;
-        Ok(Self { requests })
+        let credentials = Self { requests };
+        if warm_chain {
+            credentials.resolve()?;
+        }
+        Ok(credentials)
     }
 
     pub(super) fn resolve(&self) -> Result<Zeroizing<AwsSessionCredentials>> {
@@ -91,7 +82,42 @@ impl CredentialChain {
     }
 }
 
-async fn resolve(chain: &DefaultCredentialsChain) -> Result<Zeroizing<AwsSessionCredentials>> {
+async fn load_provider(profile: Option<&str>) -> SharedCredentialsProvider {
+    let http = Builder::new()
+        .tls_provider(tls::Provider::Rustls(
+            tls::rustls_provider::CryptoMode::Ring,
+        ))
+        .build_https();
+    let config = ProviderConfig::default().with_http_client(http);
+    match profile {
+        None => SharedCredentialsProvider::new(
+            DefaultCredentialsChain::builder()
+                .configure(config)
+                .build()
+                .await,
+        ),
+        Some(profile) => {
+            let region = RegionProviderChain::first_try(EnvironmentVariableRegionProvider::new())
+                .or_else(
+                    ProfileFileRegionProvider::builder()
+                        .configure(&config)
+                        .profile_name(profile)
+                        .build(),
+                )
+                .or_else(ImdsRegionProvider::builder().configure(&config).build())
+                .region()
+                .await;
+            SharedCredentialsProvider::new(
+                ProfileFileCredentialsProvider::builder()
+                    .configure(&config.with_region(region))
+                    .profile_name(profile)
+                    .build(),
+            )
+        }
+    }
+}
+
+async fn resolve(chain: &SharedCredentialsProvider) -> Result<Zeroizing<AwsSessionCredentials>> {
     let credentials = chain
         .provide_credentials()
         .await
@@ -123,5 +149,9 @@ async fn resolve(chain: &DefaultCredentialsChain) -> Result<Zeroizing<AwsSession
 }
 
 fn failure(message: &str) -> CredentialError {
-    CredentialError::Credential(format!("AWS SDK credential chain: {message}"))
+    CredentialError::Credential(format!("AWS SDK credentials: {message}"))
 }
+
+#[cfg(test)]
+#[path = "aws_sdk_tests.rs"]
+mod tests;
