@@ -28,7 +28,9 @@ runs inside the box, so the workload can't access it; the workload can only send
 [the interpreters run in the box's trusted process](decisions.md#the-interpreters-run-in-the-trusted-process)).
 
 It expects `strands-box-contain-trampoline` and `strands-box-sock-alias` to sit next to it. If one
-is missing when it's needed, `strands-box` stops.
+is missing when it's needed, `strands-box` stops. On macOS, Box asks the operating system where
+the running executable lives. Starting through a symlink and then switching that link to another
+release does not change where that process finds its helpers.
 
 ### Trampoline - `strands-box-contain-trampoline`
 
