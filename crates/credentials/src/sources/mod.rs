@@ -12,6 +12,7 @@ mod credsd;
 mod env;
 mod file;
 mod op;
+mod prototype_aws_chain;
 mod prototype_aws_process;
 
 pub(crate) use aws::{

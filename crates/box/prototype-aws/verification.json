@@ -1,21 +1,44 @@
 {
-  "verified_at_utc": "2026-10-30T04:25:05.181705+00:00",
+  "verified_at_utc": "2026-10-30T19:05:35.166978+00:00",
   "platform": "Linux aarch64",
   "base_commit": "7cf6bad7728410c6c28cd7bebd802ff2e18af7ee",
-  "branch": "box-credentials",
-  "status": "uncommitted throwaway prototype",
-  "build": "passed with --all-features --locked --offline",
+  "parent_commit": "25b17cc388677875049ae69f1ab57d3cfbf7a376",
+  "branch": "prototype/aws-credential-sources",
+  "status": "SDK chain revision, checked before commit",
+  "build": "cargo build -p strands-box --all-features --bins; passed",
+  "sdk": {
+    "aws-config": "1.13.0",
+    "features": [
+      "rt-tokio",
+      "credentials-process",
+      "sso"
+    ],
+    "http_tls": "aws-smithy-http-client with rustls-ring",
+    "new_locked_packages": 36
+  },
   "smoke": [
     {
+      "case": "env",
       "runs": [
         {
-          "source": "environment",
+          "source": "chain",
           "exit": 0,
           "both_sts_requests_200": true
         }
       ]
     },
     {
+      "case": "profile",
+      "runs": [
+        {
+          "source": "chain",
+          "exit": 0,
+          "both_sts_requests_200": true
+        }
+      ]
+    },
+    {
+      "case": "explicit",
       "runs": [
         {
           "source": "profile",
@@ -23,57 +46,80 @@
           "both_sts_requests_200": true
         }
       ]
+    },
+    {
+      "case": "container",
+      "runs": [
+        {
+          "source": "chain",
+          "exit": 0,
+          "both_sts_requests_200": true
+        }
+      ],
+      "source_detail": "SDK container provider through a loopback fixture, real STS signatures",
+      "container_provider_requests": 3
     }
   ],
   "additional_checks": [
     {
-      "check": "two fresh ADA invocations; captured command survives config replacement; helper environment filtered; no credsd",
+      "check": "No credentials with metadata disabled refuses startup",
       "passed": true
     },
     {
-      "check": "wrong-version fails closed without helper stderr",
-      "passed": true
-    },
-    {
-      "check": "missing-key fails closed without helper stderr",
-      "passed": true
-    },
-    {
-      "check": "expired fails closed without helper stderr",
-      "passed": true
-    },
-    {
-      "check": "oversized helper output is refused",
+      "check": "SDK credential_process failure is refused without exposing helper stderr",
       "passed": true
     }
   ],
-  "timeout": {
-    "timeout_seconds": 30.05,
-    "descendant_terminal": true
+  "tests": [
+    {
+      "command": "cargo test -p strands-box-credentials --all-features --locked",
+      "unit_passed": 207,
+      "integration_passed": 27
+    },
+    {
+      "command": "cargo test -p strands-box --all-features --locked --lib the_aws_chain",
+      "passed": 2
+    },
+    {
+      "command": "cargo clippy -p strands-box-credentials --all-targets --all-features --locked -- -D warnings",
+      "passed": true
+    },
+    {
+      "check": "scoped rustfmt, Python syntax, git diff --check",
+      "passed": true
+    }
+  ],
+  "previous_profile_checks": {
+    "commit": "25b17cc388677875049ae69f1ab57d3cfbf7a376",
+    "note": "Explicit helper source is unchanged. That commit records command capture, environment filtering, invalid output, output limit, and process-group timeout checks; these were not repeated here."
   },
-  "full_test_suite": "not run; prototype scope",
-  "new_dependencies": false,
-  "lockfile_changed": false,
   "limitations": [
-    "Linux only",
+    "Full workspace tests and Box clippy were not run; prototype scope",
+    "Linux only; no ECS, EKS, EC2, or SSO deployment checks",
+    "Container provider used a loopback fixture with valid temporary credentials",
     "STS HTTP status checked; returned identity not compared",
     "Renewal after actual credential expiry not exercised",
-    "Credential helpers run as trusted host processes",
-    "No Box credential cache"
+    "Both helper paths execute trusted host code",
+    "SDK helpers use a shell and inherit the host environment; the SDK path has no Box output limit or process-group cleanup",
+    "No outer credential cache; retained SDK provider state only"
   ],
   "source_sha256": {
-    "crates/box/src/record/config/egress.rs": "76776f73ff58d6552bcfa8afdde53cf4b79f44dff76b7cf844c39cb10a193c5c",
+    "Cargo.lock": "3cea4f1eb4c817051b79d3e0ad4e419f17dac07447a6e02e3065cd31047ef97e",
+    "crates/credentials/Cargo.toml": "b904a494e9a17690b7ff12858f802c017810fd6abe01275e6c6d087ba4585538",
+    "crates/box/src/record/config/egress.rs": "fcb5886e621a1e5756baef0ec66b2aaad57537520f48578c64e6fd66c51b6d8b",
     "crates/credentials/src/legs.rs": "18615b1c49a72e7cb94b10119b19ee70d815f75f698f72f47d29b729396a2f83",
-    "crates/credentials/src/sources/aws.rs": "8f5cd694a78c0d23d5ece07cf9197be0c9f46648bbd20cb93f2f110b89dd590c",
+    "crates/credentials/src/sources/aws.rs": "547453892b37fe55ffce06778763224a1e69211a17e81ab909658d141c328613",
     "crates/credentials/src/sources/aws_profile.rs": "25d13b79dad2a8275f7658c84614be9db95ecdd7d64a69cc5af745a328fc078a",
-    "crates/credentials/src/sources/mod.rs": "91a051106a96b2fbe52d2f59779f5f59046897fc63a4b59d69acf48e8a79d24c",
+    "crates/credentials/src/sources/mod.rs": "3bc1c0d462b31cb1cca7d78bfae488699c820823e3804d8169f83d7dc6ba85f2",
+    "crates/credentials/src/sources/prototype_aws_chain.rs": "4335c4e51e672d19670b23600185bfbf482b909e4fe010e7b040fe871c3ab8fa",
     "crates/credentials/src/sources/prototype_aws_process.rs": "68ea1c560cc9a8f0f1e27c9b406ef40ae99f33374f69b250879cbb4213b0f81d",
-    "crates/credentials/src/vault.rs": "5e69f4d0d0f244051de4c3ea7364e73cd7e582d1053d85921c3722d218b5478c",
-    "crates/box/prototype-aws/run.py": "4ddadfcefb5b60b263995d3ac2b215893d6e7155996b64de5b243204e59118a0"
+    "crates/credentials/src/vault.rs": "b210748db355015734ce0eb45b8c51206d32cef7879fc84a2d4989a0d9358fa0",
+    "crates/box/prototype-aws/run.py": "43c1bcc6688e7672a472f157931e7138ef6c3ff5cc08215c2aec9354f7b7eab4"
   },
   "binary_sha256": {
-    "strands-box": "edc23f0c5e9862f3ba69d2cefd161fc27e2313a12532e0a36b821499f2e8280d",
-    "box-egress-probe": "8328b02145b0e569469293977042bfeee4a98fc8ab6c4e4e328c22c0ac55c16e",
+    "strands-box": "68a201e3fa00416ce6c7eeee94d78c2c4a8af04d19336a2ce67f31ee5ae94f61",
+    "box-egress-probe": "a040eed90c9047b8f32071af1171ab12b0b010bd6e8d1280793a3bdea703eb64",
     "strands-box-contain-trampoline": "d3b1584ac535179a8390de3357eddfa995dd127f6d67fbfd416051c86386e703"
-  }
+  },
+  "review": "Startup acquisition audit gap fixed; follow-up review found no remaining finding."
 }

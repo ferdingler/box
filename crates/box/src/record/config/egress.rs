@@ -375,7 +375,7 @@ enum SecretScheme {
     Env,
     /// `aws://profile`: signed in the boundary, so nothing is placed.
     Aws,
-    AwsEnvironment,
+    AwsChain,
     /// `credsd://environment`: a credsd credential. It signs in the boundary; the daemon's
     /// `material.type` picks the signer per request, and the entry names no credential type.
     Credsd,
@@ -427,7 +427,7 @@ impl EgressSecret {
         let scheme = match scheme {
             "env" => SecretScheme::Env,
             AWS_SCHEME => SecretScheme::Aws,
-            "aws-env" => SecretScheme::AwsEnvironment,
+            "aws-chain" => SecretScheme::AwsChain,
             CREDSD_SCHEME => SecretScheme::Credsd,
             _ => return None,
         };
@@ -458,7 +458,7 @@ impl EgressEntry {
         matches!(
             secret.deliverable(),
             Some((
-                SecretScheme::Aws | SecretScheme::AwsEnvironment | SecretScheme::Credsd,
+                SecretScheme::Aws | SecretScheme::AwsChain | SecretScheme::Credsd,
                 _
             ))
         )
@@ -499,11 +499,11 @@ impl EgressEntry {
         let Some(secret) = &self.secret else {
             return Ok(Vec::new());
         };
-        let locator = if matches!(
-            secret.deliverable(),
-            Some((SecretScheme::AwsEnvironment, "default"))
-        ) {
-            Locator::structured(BTreeMap::from([("source".to_string(), "aws".to_string())]))
+        let locator = if matches!(secret.deliverable(), Some((SecretScheme::AwsChain, ""))) {
+            Locator::structured(BTreeMap::from([(
+                "source".to_string(),
+                "aws-chain".to_string(),
+            )]))
         } else {
             Locator::parse_uri(&secret.reference)
         }
@@ -617,7 +617,7 @@ impl EgressEntry {
         }
         let Some((scheme, _)) = secret.reference.split_once("://") else {
             return refuse(
-                "secret must be a URI such as env://NAME, aws://profile, or aws-env://default",
+                "secret must be a URI such as env://NAME, aws://profile, or aws-chain://",
             );
         };
 
@@ -627,14 +627,14 @@ impl EgressEntry {
             return refuse(&format!(
                 "secret scheme {scheme:?} is not one the box can deliver: use env://NAME for a \
                  credential the workload presents as a placeholder, aws://profile for one signed \
-                 in the boundary, aws-env://default for exported AWS keys, or \
+                 in the boundary, aws-chain:// for the default AWS credential chain, or \
                  credsd://<environment> for a credsd-vended credential"
             ));
         }
-        if let Some((SecretScheme::AwsEnvironment, name)) = secret.deliverable()
-            && name != "default"
+        if let Some((SecretScheme::AwsChain, name)) = secret.deliverable()
+            && !name.is_empty()
         {
-            return refuse("the environment credential prototype uses aws-env://default");
+            return refuse("the AWS credential chain uses aws-chain:// with no selector");
         }
 
         // A `credsd://` source names a daemon environment and no credential type: the box infers the
@@ -657,7 +657,7 @@ impl EgressEntry {
                 || secret.param.is_some())
         {
             return refuse(
-                "a signed AWS secret (aws://, aws-env://, or credsd://) is signed in-boundary \
+                "a signed AWS secret (aws://, aws-chain://, or credsd://) is signed in-boundary \
                  across several headers, so it takes no header, prefix, placement, or param",
             );
         }
@@ -1648,6 +1648,37 @@ mod tests {
                 "[egress.a]\ndestinations = [\"api.test\"]\nsecret.ref = {locator:?}"
             ))
             .unwrap_or_else(|error| panic!("{locator} must be accepted: {error}"));
+        }
+    }
+
+    #[test]
+    fn the_aws_chain_has_no_selector_and_signs_in_the_boundary() {
+        let entries = load(
+            "[egress.a]\ndestinations = [\"sts.us-east-1.amazonaws.com\"]\nsecret.ref = \"aws-chain://\"",
+        )
+        .expect("the chain is a supported source");
+        let bindings = entries["a"].to_bindings().expect("the chain translates");
+        assert_eq!(bindings.len(), 1);
+        assert!(matches!(
+            EgressEntry::placement(entries["a"].secret.as_ref().unwrap()),
+            Placement::SignedInBoundary
+        ));
+        assert_eq!(bindings[0].locator.scheme(), "aws-chain");
+    }
+
+    #[test]
+    fn the_aws_chain_refuses_a_selector_and_the_removed_environment_scheme() {
+        for reference in [
+            "aws-chain://default",
+            "aws-chain://prod",
+            "aws-env://default",
+        ] {
+            assert!(
+                load(&format!(
+                    "[egress.a]\ndestinations = [\"sts.us-east-1.amazonaws.com\"]\nsecret.ref = {reference:?}"
+                ))
+                .is_err()
+            );
         }
     }
 

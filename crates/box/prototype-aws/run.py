@@ -47,23 +47,23 @@ def seed_environment(environment, profile):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("source", choices=("environment", "profile"))
-    parser.add_argument("--profile", default="bedrock")
+    parser.add_argument("source", choices=("chain", "profile"))
+    parser.add_argument("--profile", help="AWS_PROFILE for the chain, or the explicit profile name.")
     parser.add_argument(
         "--seed-profile",
-        help="For the environment demo, fetch a profile's credentials in the parent process.",
+        help="For the chain demo, fetch a profile's credentials into the parent environment.",
     )
     parser.add_argument("--calls", type=int, default=1)
     args = parser.parse_args()
     environment = dict(os.environ)
-    if args.source == "environment":
+    if args.source == "chain":
         if args.seed_profile:
             seed_environment(environment, args.seed_profile)
-        if not all(environment.get(name) for name in ("AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY")):
-            raise SystemExit("Export AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY first.")
-        reference = "aws-env://default"
+        if args.profile:
+            environment["AWS_PROFILE"] = args.profile
+        reference = "aws-chain://"
     else:
-        reference = f"aws://{args.profile}"
+        reference = f"aws://{args.profile or 'bedrock'}"
         for name in ("AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY", "AWS_SESSION_TOKEN"):
             environment.pop(name, None)
     binary = ROOT / "target/debug/strands-box"
