@@ -103,21 +103,19 @@ prose does not approve a change to the frozen contract.
 
 | Task | Required context |
 | --- | --- |
-| Change Box composition, configuration, records, aliases, or process startup | [Box guidance](crates/box/AGENTS.md) |
 | Change sandbox grants or operating system enforcement | [Containment guidance](crates/containment/AGENTS.md) |
 | Change policy integration, events, or temporal history | [Policy guidance](crates/policy/AGENTS.md); its code and tests own commit, recovery, policy-change, and time behaviour |
 | Build on telemetry or change its lifecycle | [Telemetry guidance](crates/telemetry/AGENTS.md); the workload can reach its receiver |
 | Add a crate or change a public surface after approval | [Conventions](docs/conventions.md); use `containment` as the reference implementation |
 
-Read workspace membership and exclusions from `Cargo.toml`, and the compiler version from
-`rust-toolchain.toml`. Keep `Cargo.lock` unchanged. Do not relax version requirements.
+Keep `Cargo.lock` unchanged. Do not relax version requirements.
 
 ## Design and implementation
 
 For an architecture choice, research first, use `/kd` to compare the options, and let the user
 decide before `/spec` and implementation. A candidate is not a decision.
 Store research in `.agents/explorations/{topic}.exp.md`, prototypes in `.agents/pocs/`, and local
-decision and spec drafts in `.agents/drafts/`. Keep drafts and explorations out of commits.
+decision and spec drafts in `.agents/drafts/`. Keep drafts, explorations, and prototypes out of commits.
 Product code belongs in `crates/`.
 
 Name types after their role in the product. Use `workload`, never `session`, in new public names.
@@ -198,15 +196,13 @@ a backlog. Keep human-authored snapshots in `team/designs/` outside agent writin
 [the documentation update rules](.agents/references/doc-updates.md).
 They own the prose locations, the complete surface-to-page table, and the limits for features still
 in flux. Apply every matching row; use `docs-sync` to check the docs against the diff.
-A change to a frozen surface always carries its page. Committed examples must still work.
+Committed examples must still work.
 
 ### Decisions and prose
 
-Record a decision through `/kd` in `docs/design/decisions.md` only after the user decides it.
-A code change adds no obligation to create an entry. State the answer, the rejected alternative,
-and the cost, in the shape of adjacent entries, without a date or status line.
-When an answer changes, rewrite its entry's title, answer, and affected costs; preserve its `<a id>`
-anchor. Keep drafts, explorations, and prototypes out of commits.
+**Before creating or updating a decision entry**, use [kd](.agents/skills/kd/SKILL.md) for its format
+and rewrite rules. Record an entry in `docs/design/decisions.md` only after the user decides it.
+A code change adds no obligation to create an entry.
 
 Cite behaviour by symbol or test name, and decisions by stable relative links. Keep file line numbers,
 local specs, requirement numbers, and draft `KD-N` identifiers out of code citations.
