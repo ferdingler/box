@@ -52,6 +52,7 @@ test to make a suite pass.
 - **A workload-named program runs only inside a sandbox.** Never execute it directly from the
   trusted process. A policy permit decides whether it runs; the sandbox bounds what it can do.
   Every declared stdio MCP server also starts in its own sandbox, after `shell:spawn` permits it.
+  Preserve `runtime_mcp_start.rs::absent_start_permit_refuses_the_server_and_it_never_runs`.
 
 ### Filesystem reach
 
@@ -65,6 +66,8 @@ The agent's filesystem lists govern its sandbox alone. Each tool gets its reach 
 `fs:*` decisions, so disclose each grant on stderr at startup. `write` does not imply `read`;
 on Linux, a writable bind also reads, and its disclosure must state that limit.
 Keep the box's own state unreachable from both the agent and its tools.
+Preserve `box_filesystem.rs::the_boxs_own_private_tree_is_unreachable_from_inside` and
+`run_config.rs::a_tool_grant_cannot_expose_the_box_directory`.
 
 **Before changing filesystem reach**, read the HOME, workspace, and filesystem rules and their
 named tests in [the box contract](crates/box/AGENTS.md#the-box-contract).
@@ -75,10 +78,16 @@ and the [box's open findings](crates/box/AGENTS.md#open-findings--divergences-no
 
 ### macOS execution
 
-Keep the agent's exec grants enumerated: one `process-exec` rule for its command and each `exec`
-entry, paired with `file-read-metadata`, never `file-read*`. A file uses a literal; a directory uses
-a subpath. Keep the unscoped `process-fork` grant; its fork-bomb risk remains a stated limit.
+Keep the agent's exec grants enumerated: one `process-exec` rule for its command, each `exec` entry,
+and each interpreter or MCP alias in `bin/`. Pair each with `file-read-metadata`, never `file-read*`.
+A file uses a literal; a directory uses a subpath.
+Keep `process-fork` unscoped; a generic filter compiles and authorizes nothing.
+Its fork-bomb risk remains a stated limit.
 Do not grant the agent `process-exec*`, the host OS's shell, or an inherited `PATH` tree.
+
+**Before changing exec or fork grants**, read
+[minimum process authority](crates/containment/README.md#the-minimum-process-authority-the-profile-grants)
+for metadata pairing and fork-filter limits.
 
 The broader execution and metadata grants for a tool or MCP server apply only to its own sandbox.
 Keep the agent's profile unchanged by those exceptions, including its write-xor-execute restrictions.
@@ -152,8 +161,8 @@ commit**, after implementation is complete. It reviews code, runs the required g
 docs against [What a change updates](#what-a-change-updates).
 Finish only when the gates pass and every finding is fixed or has a stated reason for leaving it.
 [Decision-critic](.agents/agents/decision-critic.md) reviews a decision or spec; it is not a code gate.
-A review requires only docs the diff makes wrong or a shipped surface lacks. It does not require
-new decision entries or general doc cleanup.
+A doc review reports only prose the diff makes wrong, or missing pages for surfaces the diff adds
+and the update table covers. It does not require new decision entries or general doc cleanup.
 
 ## Commit and pull request
 
@@ -188,8 +197,8 @@ a backlog. Keep human-authored snapshots in `team/designs/` outside agent writin
 **Before writing or reviewing docs, or committing a code change**, read
 [the documentation update rules](.agents/references/doc-updates.md).
 They own the prose locations, the complete surface-to-page table, and the limits for features still
-in flux. Apply every matching row; use `docs-sync` to find the pages the diff makes wrong or leaves missing.
-Frozen surfaces always require their docs. Committed examples must still work.
+in flux. Apply every matching row; use `docs-sync` to check the docs against the diff.
+A change to a frozen surface always carries its page. Committed examples must still work.
 
 ### Decisions and prose
 
