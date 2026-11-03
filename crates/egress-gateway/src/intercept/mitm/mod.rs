@@ -123,6 +123,21 @@ pub(crate) struct SharedState {
 }
 
 impl SharedState {
+    pub(crate) fn execution_enabled(&self) -> bool {
+        self.emitter.execution_enabled()
+    }
+
+    pub(crate) fn execution_transport(
+        &self,
+        stage: &str,
+        host: &str,
+        port: u16,
+        correlation: &crate::audit::RequestId,
+    ) {
+        self.emitter
+            .execution_transport(stage, host, port, correlation);
+    }
+
     /// The pinned IP override for `host`, if the supervisor configured one (split-horizon / fixed
     /// endpoint map). `None` falls back to normal resolution.
     fn dns_override(&self, host: &str) -> Option<std::net::IpAddr> {

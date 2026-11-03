@@ -58,13 +58,8 @@ impl<'a> ExecutionExchange<'a> {
         connect: &ConnectRequest,
         correlation: &RequestId,
     ) -> Option<Self> {
-        state.emitter.execution_enabled().then(|| {
-            state.emitter.execution_transport(
-                "request_received",
-                &connect.host,
-                connect.port,
-                correlation,
-            );
+        state.execution_enabled().then(|| {
+            state.execution_transport("request_received", &connect.host, connect.port, correlation);
             Self {
                 state,
                 host: connect.host.clone(),
@@ -77,7 +72,7 @@ impl<'a> ExecutionExchange<'a> {
 
 impl Drop for ExecutionExchange<'_> {
     fn drop(&mut self) {
-        self.state.emitter.execution_transport(
+        self.state.execution_transport(
             "exchange_handled",
             &self.host,
             self.port,
